@@ -1,98 +1,135 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+/**
+ * ホーム画面（タブの "/"）
+ * -------------------------------------------------------------
+ * アプリのハブ。ここから「筋トレを始める」で準備画面(/workout/prepare)へ。
+ * 連続日数などの実データはサービス層(スタブ)から取得。
+ */
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
+import { tapImpact } from '@/lib/haptics';
+import { fetchStreakDays } from '@/services/workoutService';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const router = useRouter();
+  const [streak, setStreak] = useState<number | null>(null);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  useEffect(() => {
+    let alive = true;
+    fetchStreakDays().then((n) => {
+      if (alive) setStreak(n);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const startWorkout = () => {
+    tapImpact();
+    router.push('/workout/prepare');
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={styles.hello}>こんにちは</Text>
+        <Text style={styles.title}>今日もゆるっといこう</Text>
+      </View>
+
+      {/* 実績 */}
+      <View style={styles.stats}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>
+            {streak ?? '—'}
+            <Text style={styles.statUnit}> 日</Text>
+          </Text>
+          <Text style={styles.statLabel}>連続記録</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>
+            38<Text style={styles.statUnit}> 分</Text>
+          </Text>
+          <Text style={styles.statLabel}>今週の合計</Text>
+        </View>
+      </View>
+
+      <View style={{ flex: 1 }} />
+
+      {/* メインCTA */}
+      <Pressable style={styles.cta} onPress={startWorkout}>
+        <Text style={styles.ctaText}>筋トレを始める</Text>
+        <Text style={styles.ctaSub}>開いたら15秒で時間を決めよう</Text>
+      </Pressable>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+    backgroundColor: WorkoutColors.screenBg,
+    paddingHorizontal: 20,
+  },
+  header: {
+    paddingTop: 16,
+    marginBottom: 20,
+  },
+  hello: {
+    fontSize: 14,
+    color: WorkoutColors.textSecondary,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: WorkoutColors.textPrimary,
+    marginTop: 4,
+  },
+  stats: {
     flexDirection: 'row',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: WorkoutColors.surface,
+    borderWidth: 1,
+    borderColor: WorkoutColors.border,
+    borderRadius: WorkoutLayout.radiusControl,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+  },
+  statValue: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: WorkoutColors.textPrimary,
+  },
+  statUnit: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: WorkoutColors.textSecondary,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: WorkoutColors.textMuted,
+    marginTop: 6,
+  },
+  cta: {
+    backgroundColor: WorkoutColors.primary,
+    borderRadius: WorkoutLayout.radiusCard,
+    paddingVertical: 22,
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 24,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  ctaText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  ctaSub: {
+    color: WorkoutColors.mist,
+    fontSize: 13,
+    marginTop: 6,
   },
 });
