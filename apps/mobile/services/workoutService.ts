@@ -11,6 +11,7 @@
  */
 
 import type { DurationOption, WorkoutResult } from '@/types/workout';
+import { supabase } from '../../supabase';
 
 /** ドラムロールに表示する時間の候補（分）。ずぼら向けに短い刻みも用意。 */
 const DURATION_MINUTES = [1, 3, 5, 10, 15, 20, 25, 30, 40, 45, 60] as const;
@@ -52,9 +53,40 @@ export async function fetchDefaultDurationSec(): Promise<number> {
  *   });
  * 現状はコンソール出力のみ（フロント単体で動作確認できるように）。
  */
+
 export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
+  console.log('[workoutService] saveWorkoutSession (Supabase送信開始):', result);
+
+  try {
+    const { data, error } = await supabase
+      .from('workout_logs') // あなたが作成したSupabaseのテーブル名
+      .insert([
+        {
+          user_id: 'test_user_fukuoka',           // テスト用の仮ユーザー名
+          menu_id: 1,                             // テスト用のメニューID
+          planned_seconds: result.plannedSec,     // 目標時間（秒）
+          completed_seconds: result.completedSec, // 実際にやった時間（秒）
+          level_difficulty: result.level,         // 難易度（easy, normal, hard）
+          completed: result.completed,            // 完遂したか（true/false）
+          started_at: result.startedAt,           // 開始日時
+          ended_at: result.endedAt,               // 終了日時
+        }
+      ]);
+
+    if (error) {
+      console.error('Supabaseへの保存に失敗しました:', error.message);
+    } else {
+      console.log('Supabaseへの保存が完全に成功しました！ 🎉');
+    }
+  } catch (err) {
+    console.error('通信エラーなど予期せぬ失敗:', err);
+  }
+}
+
+/*export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   console.log('[workoutService] saveWorkoutSession (stub):', result);
 }
+*/
 
 /**
  * 連続達成日数（ストリーク）を返す。サマリー画面などで表示。
