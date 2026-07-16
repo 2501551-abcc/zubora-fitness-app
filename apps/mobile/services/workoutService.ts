@@ -11,7 +11,7 @@
  */
 
 import type { DurationOption, WorkoutResult } from '@/types/workout';
-import { supabase } from '../../supabase';
+import { supabase } from '../supabase';
 
 /** ドラムロールに表示する時間の候補（分）。ずぼら向けに短い刻みも用意。 */
 const DURATION_MINUTES = [1, 3, 5, 10, 15, 20, 25, 30, 40, 45, 60] as const;
