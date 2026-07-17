@@ -126,7 +126,12 @@ export default function WorkoutSessionScreen() {
 
       {/* 減っていくバー */}
       <View style={styles.barSection}>
-        <DepletingBar progress={progress} height={14} />
+        <DepletingBar
+          progress={progress}
+          height={14}
+          trackColor={WorkoutColors.ink}
+          fillColor={WorkoutColors.accent}
+        />
         <View style={styles.barLabels}>
           <Text style={styles.barLabelText}>0:00</Text>
           <Text style={styles.barLabelText}>{formatTime(plannedSec)}</Text>
@@ -239,7 +244,7 @@ const styles = StyleSheet.create({
     backgroundColor: WorkoutColors.primary,
   },
   primaryText: {
-    color: '#FFFFFF',
+    color: WorkoutColors.onAccent,
     fontSize: 16,
     fontWeight: '600',
   },

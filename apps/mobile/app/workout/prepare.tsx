@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+
 /** 開いた瞬間から自動スタートまでの秒数 */
 const PREP_SECONDS = 15;
 /** 初期選択の時間（分） */
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   startText: {
-    color: '#FFFFFF',
+    color: WorkoutColors.onAccent,
     fontSize: 17,
     fontWeight: '600',
   },

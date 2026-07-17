@@ -1,7 +1,7 @@
 /**
  * ホーム画面（タブの "/"）
  * -------------------------------------------------------------
- * アプリのハブ。ここから「筋トレを始める」で準備画面(/workout/prepare)へ。
+ * アプリのハブ。「筋トレを始める」で準備画面へ、「目標ロードマップ」でツリーへ。
  * 連続日数などの実データはサービス層(スタブ)から取得。
  */
 
@@ -57,6 +57,15 @@ export default function HomeScreen() {
       </View>
 
       <View style={{ flex: 1 }} />
+
+      {/* 目標ロードマップへの導線 */}
+      <Pressable style={styles.goalLink} onPress={() => router.push('/goal')}>
+        <View>
+          <Text style={styles.goalLinkTitle}>目標ロードマップ</Text>
+          <Text style={styles.goalLinkSub}>今の目標を見る</Text>
+        </View>
+        <Text style={styles.goalChevron}>›</Text>
+      </Pressable>
 
       {/* メインCTA */}
       <Pressable style={styles.cta} onPress={startWorkout}>
@@ -115,6 +124,32 @@ const styles = StyleSheet.create({
     color: WorkoutColors.textMuted,
     marginTop: 6,
   },
+  goalLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: WorkoutColors.surface,
+    borderWidth: 1,
+    borderColor: WorkoutColors.border,
+    borderRadius: WorkoutLayout.radiusControl,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginBottom: 12,
+  },
+  goalLinkTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: WorkoutColors.textPrimary,
+  },
+  goalLinkSub: {
+    fontSize: 12,
+    color: WorkoutColors.textSecondary,
+    marginTop: 2,
+  },
+  goalChevron: {
+    fontSize: 24,
+    color: WorkoutColors.primary,
+  },
   cta: {
     backgroundColor: WorkoutColors.primary,
     borderRadius: WorkoutLayout.radiusCard,
@@ -123,13 +158,14 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   ctaText: {
-    color: '#FFFFFF',
+    color: WorkoutColors.onAccent,
     fontSize: 20,
     fontWeight: '700',
   },
   ctaSub: {
-    color: WorkoutColors.mist,
+    color: WorkoutColors.onAccent,
     fontSize: 13,
     marginTop: 6,
+    opacity: 0.8,
   },
-});
+})

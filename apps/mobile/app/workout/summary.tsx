@@ -43,8 +43,7 @@ export default function WorkoutSummaryScreen() {
 
   const goToGoal = () => {
     tapImpact();
-    // TODO(nav): 目標ロード画面ができたら '/goal' などへ差し替え。
-    router.replace('/(tabs)');
+    router.replace('/goal');
   };
 
   return (
@@ -194,7 +193,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryText: {
-    color: '#FFFFFF',
+    color: WorkoutColors.onAccent,
     fontSize: 17,
     fontWeight: '600',
   },

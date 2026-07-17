@@ -21,8 +21,8 @@ interface DepletingBarProps {
 export function DepletingBar({
   progress,
   height = 12,
-  trackColor = WorkoutColors.ink,
-  fillColor = WorkoutColors.accent,
+  trackColor = WorkoutColors.border,
+  fillColor = WorkoutColors.primary,
 }: DepletingBarProps) {
   const clamped = Math.max(0, Math.min(1, progress));
 
