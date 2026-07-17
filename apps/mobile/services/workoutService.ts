@@ -62,14 +62,14 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
       .from('workout_logs') // あなたが作成したSupabaseのテーブル名
       .insert([
         {
-          user_id: 'test_user_fukuoka',           // テスト用の仮ユーザー名
+          user_id: '00000000-0000-0000-0000-000000000000',           // テスト用の仮ユーザー名
           menu_id: 1,                             // テスト用のメニューID
-          planned_seconds: result.plannedSec,     // 目標時間（秒）
-          completed_seconds: result.completedSec, // 実際にやった時間（秒）
-          level_difficulty: result.level,         // 難易度（easy, normal, hard）
-          completed: result.completed,            // 完遂したか（true/false）
-          started_at: result.startedAt,           // 開始日時
-          ended_at: result.endedAt,               // 終了日時
+          //planned_seconds: result.plannedSec,     // 目標時間（秒）
+          //completed_seconds: result.completedSec, // 実際にやった時間（秒）
+          //level_difficulty: result.level,         // 難易度（easy, normal, hard）
+          //completed: result.completed,            // 完遂したか（true/false）
+          //started_at: result.startedAt,           // 開始日時
+          //ended_at: result.endedAt,               // 終了日時
         }
       ]);
 
