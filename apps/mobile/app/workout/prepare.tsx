@@ -19,6 +19,17 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../../supabase';
 
+// ★ 1. expo-notifications のインポート
+import * as Notifications from 'expo-notifications';
+
+// ★ 2. アプリ起動中（フォアグラウンド）でも通知をポップアップさせる設定
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 /** 開いた瞬間から自動スタートまでの秒数 */
 const PREP_SECONDS = 15;
@@ -26,6 +37,31 @@ const PREP_SECONDS = 15;
 const DEFAULT_MINUTES = 15;
 
 const LEVELS: WorkoutLevel[] = ['easy', 'normal', 'hard'];
+
+// ★ 3. 通知セット関数（修正版）
+const scheduleNextWorkoutNotification = async () => {
+  try {
+    // 既存の予約をクリア
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    // 10秒後に通知を予約
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '💖 今日もゆるっといこう！',
+        body: '10秒テスト完了！今日もサクッと動いてロードマップを進めよう✨',
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 10,
+        repeats: false,
+      },
+    });
+    console.log('✅ 通知を10秒後に予約しました！');
+  } catch (error) {
+    console.log('❌ 通知予約エラー:', error);
+  }
+};
 
 export default function PrepareScreen() {
   const router = useRouter();
@@ -47,12 +83,45 @@ export default function PrepareScreen() {
 
   const startedRef = useRef(false);
 
+// ★ 4. 初期化処理（権限取得 ＋ Android用チャンネル作成）
+  useEffect(() => {
+    async function setupNotifications() {
+      // Androidの場合は通知チャンネルの設定が必要
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF2366',
+        });
+      }
+
+      // 権限の確認と要求
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.log('⚠️ 通知権限が拒否されました');
+      }
+    }
+
+    setupNotifications();
+  }, []);
+
   // 筋トレ画面へ遷移（自動 / 手動どちらからも呼ばれる。二重遷移をガード）
   const goToWorkout = useCallback(
-    (manual: boolean) => {
+    async (manual: boolean) => {
       if (startedRef.current) return;
       startedRef.current = true;
       if (manual) tapImpact();
+
+      // ★ 5. 【最重要】ここで通知予約関数を実行！
+      await scheduleNextWorkoutNotification();
+
       router.replace({
         pathname: '/workout/session',
         params: {
