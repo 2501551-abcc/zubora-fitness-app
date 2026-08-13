@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "ズボラ筋トレ",
+    "slug": "zubora-workout",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -24,6 +24,7 @@
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
+      }
     },
     "plugins": [
       "expo-router",
@@ -45,4 +46,3 @@
       "reactCompiler": true
     }
   }
-}
