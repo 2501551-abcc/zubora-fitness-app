@@ -9,9 +9,17 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.zubora.workout",
+      "appleTeamId": "V65BHV5H9C",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.zubora.workout"
+        ]
+      }
     },
     "android": {
+      "package": "com.zubora.workout",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -24,7 +32,6 @@
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
-      }
     },
     "plugins": [
       "expo-router",
@@ -39,6 +46,21 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#1D9E75"
+        }
+      ],
+      "@bacons/apple-targets",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
       ]
     ],
     "experiments": {
@@ -46,3 +68,4 @@
       "reactCompiler": true
     }
   }
+}
