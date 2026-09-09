@@ -1,9 +1,12 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
+import { fetchStreakDays } from '@/services/workoutService';
 
 export const unstable_settings = {
   // 起動時はホーム（タブ）から。筋トレ・目標はそこから開始する。
@@ -12,6 +15,20 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  // 起動時にホーム画面ウィジェットへ最新の連続日数を渡す（iOS のみ／他は no-op）。
+  useEffect(() => {
+    let alive = true;
+    fetchStreakDays()
+      .then((streakDays) => {
+        if (!alive) return;
+        pushWidgetSnapshot({ streakDays, reminderHour: DEFAULT_REMINDER_HOUR });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

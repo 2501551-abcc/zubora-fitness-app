@@ -15,17 +15,19 @@ import { getDurationOptions } from '@/services/workoutService';
 import { LEVEL_LABELS, type WorkoutLevel } from '@/types/workout';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../../supabase';
 
 // ★ 1. expo-notifications のインポート
 import * as Notifications from 'expo-notifications';
 
 // ★ 2. アプリ起動中（フォアグラウンド）でも通知をポップアップさせる設定
+//    expo-notifications 0.32 (Expo SDK 54) からハンドラの形が変わり、
+//    shouldShowAlert は shouldShowBanner / shouldShowList に分割された。
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),

@@ -10,6 +10,7 @@
  * =====================================================================
  */
 
+import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
 import type { DurationOption, WorkoutResult } from '@/types/workout';
 import { supabase } from '../supabase';
 
@@ -80,6 +81,18 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
     }
   } catch (err) {
     console.error('通信エラーなど予期せぬ失敗:', err);
+  }
+
+  // ホーム画面ウィジェットを更新（連続日数・最終実施日時）。iOS 以外は no-op。
+  try {
+    const streakDays = await fetchStreakDays();
+    pushWidgetSnapshot({
+      streakDays,
+      lastWorkoutAt: result.endedAt,
+      reminderHour: DEFAULT_REMINDER_HOUR,
+    });
+  } catch (err) {
+    console.warn('[workoutService] ウィジェット更新をスキップ:', err);
   }
 }
 
