@@ -8,19 +8,22 @@
 
 import { Feather } from '@expo/vector-icons';
 import type { User } from '@supabase/supabase-js';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { tapImpact, tapLight } from '@/lib/haptics';
-import { fetchStreakDays } from '@/services/workoutService';
+import { fetchHomeStats } from '@/services/workoutService';
+import type { HomeStats } from '@/types/workout';
 import { supabase } from '@/supabase';
+
+const ZERO_STATS: HomeStats = { streakDays: 0, weekMinutes: 0, weekWorkouts: 0 };
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [streak, setStreak] = useState<number | null>(null);
+  const [stats, setStats] = useState<HomeStats>(ZERO_STATS);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -32,15 +35,31 @@ export default function HomeScreen() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_e, session) => {
       if (alive) setUser(session?.user ?? null);
     });
-    fetchStreakDays().then((n) => {
-      if (alive) setStreak(n);
-    });
 
     return () => {
       alive = false;
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  // 画面に戻るたび最新の実績を取得。
+  // 筋トレ保存（fire-and-forget の insert）直後は間に合わないことがあるので、
+  // 少し置いてもう一度取り直す。
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      const refresh = () =>
+        fetchHomeStats().then((s) => {
+          if (alive) setStats(s);
+        });
+      refresh();
+      const retries = [1500, 4000].map((ms) => setTimeout(refresh, ms));
+      return () => {
+        alive = false;
+        retries.forEach(clearTimeout);
+      };
+    }, []),
+  );
 
   const nickname =
     (user?.user_metadata?.name as string | undefined) ??
@@ -95,14 +114,15 @@ export default function HomeScreen() {
               {MonoGlyph.star} 連続記録
             </Text>
             <Text style={styles.statValue}>
-              {streak ?? '—'}
+              {stats.streakDays}
               <Text style={styles.statUnit}> 日</Text>
             </Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statTop}>今週の合計</Text>
             <Text style={styles.statValue}>
-              38<Text style={styles.statUnit}> 分</Text>
+              {stats.weekMinutes}
+              <Text style={styles.statUnit}> 分</Text>
             </Text>
           </View>
         </View>

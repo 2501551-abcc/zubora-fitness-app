@@ -51,3 +51,13 @@ export const LEVEL_LABELS: Record<WorkoutLevel, string> = {
   normal: 'ふつう',
   hard: 'がっつり',
 };
+
+/** ホーム画面の実績（連続記録 / 今週の合計） */
+export interface HomeStats {
+  /** 連続実施日数 */
+  streakDays: number;
+  /** 今週（JST・月曜はじまり）の実施時間合計（分） */
+  weekMinutes: number;
+  /** 今週の実施回数 */
+  weekWorkouts: number;
+}

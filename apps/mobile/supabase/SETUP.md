@@ -5,8 +5,9 @@
 1. **SQL**:
    - 初回: `supabase/schema.sql` を Supabase ダッシュボード > SQL Editor に貼って Run
      （既存の `users` / `friendships` / `workout_logs` への差分適用。再実行しても安全）
-   - 既に schema.sql 実行済みなら追加で `supabase/migration_02_avatar_emoji.sql` も Run
-     （アバター絵文字を `users` に持たせ、フレンド一覧にも表示。schema.sql 側にも反映済み）
+   - 既に schema.sql 実行済みなら追加で以下も Run（どちらも schema.sql 側に反映済み・再実行可）
+     - `supabase/migration_02_avatar_emoji.sql`（アバター絵文字を `users` に持たせフレンド一覧にも表示）
+     - `supabase/migration_03_home_stats.sql`（`workout_logs.duration_sec` 追加＋ホーム画面の実績 RPC `get_home_stats`）
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage

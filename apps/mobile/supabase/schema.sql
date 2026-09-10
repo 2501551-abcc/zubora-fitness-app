@@ -150,6 +150,10 @@ exception when duplicate_object then null; end $$;
 create index if not exists workout_logs_user_created
   on public.workout_logs (user_id, created_at desc);
 
+-- 実施時間（秒）。saveWorkoutSession() が result.completedSec を入れる。
+alter table public.workout_logs
+  add column if not exists duration_sec integer not null default 0;
+
 
 -- =====================================================================
 -- 4. user_workout_stats ビュー
@@ -424,12 +428,43 @@ as $$
   delete from auth.users where id = auth.uid();
 $$;
 
+-- 6-7. ホーム画面の実績（連続記録 / 今週の合計）
+create or replace function public.get_home_stats()
+returns table (
+  streak_days   integer,
+  week_minutes  integer,
+  week_workouts integer
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with wk as (
+    select date_trunc('week', (now() at time zone 'Asia/Tokyo'))::date as start_day
+  ),
+  this_week as (
+    select w.duration_sec
+    from public.workout_logs w, wk
+    where w.user_id = auth.uid()
+      and (w.created_at at time zone 'Asia/Tokyo')::date >= wk.start_day
+  )
+  select
+    coalesce(
+      (select s.streak_days from public.user_workout_stats s where s.user_id = auth.uid()),
+      0
+    )::integer,
+    coalesce((select round(sum(duration_sec) / 60.0) from this_week), 0)::integer,
+    coalesce((select count(*) from this_week), 0)::integer;
+$$;
+
 revoke all on function public.send_friend_request(text)                from public, anon;
 revoke all on function public.respond_to_friend_request(uuid, boolean) from public, anon;
 revoke all on function public.get_friends_with_status()                from public, anon;
 revoke all on function public.get_incoming_friend_requests()           from public, anon;
 revoke all on function public.update_my_presence(boolean)              from public, anon;
 revoke all on function public.delete_current_user()                    from public, anon;
+revoke all on function public.get_home_stats()                         from public, anon;
 
 grant execute on function public.send_friend_request(text)                to authenticated;
 grant execute on function public.respond_to_friend_request(uuid, boolean) to authenticated;
@@ -437,6 +472,7 @@ grant execute on function public.get_friends_with_status()                to aut
 grant execute on function public.get_incoming_friend_requests()           to authenticated;
 grant execute on function public.update_my_presence(boolean)              to authenticated;
 grant execute on function public.delete_current_user()                    to authenticated;
+grant execute on function public.get_home_stats()                         to authenticated;
 
 
 -- =====================================================================
