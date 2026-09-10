@@ -59,18 +59,21 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   console.log('[workoutService] saveWorkoutSession (Supabase送信開始):', result);
 
   try {
+    // 1. ログイン中のユーザー情報を取得
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error('未ログインのためログ保存をスキップしました:', userError?.message);
+      return;
+    }
+
+    // 2. 実際の user.id を使って保存
     const { data, error } = await supabase
-      .from('workout_logs') // あなたが作成したSupabaseのテーブル名
+      .from('workout_logs')
       .insert([
         {
-          user_id: '00000000-0000-0000-0000-000000000000',           // テスト用の仮ユーザー名
-          menu_id: 1,                             // テスト用のメニューID
-          //planned_seconds: result.plannedSec,     // 目標時間（秒）
-          //completed_seconds: result.completedSec, // 実際にやった時間（秒）
-          //level_difficulty: result.level,         // 難易度（easy, normal, hard）
-          //completed: result.completed,            // 完遂したか（true/false）
-          //started_at: result.startedAt,           // 開始日時
-          //ended_at: result.endedAt,               // 終了日時
+          user_id: user.id, // ★ 仮IDから実際のログインユーザーIDへ修正
+          menu_id: 1,
         }
       ]);
 
@@ -95,6 +98,47 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
     console.warn('[workoutService] ウィジェット更新をスキップ:', err);
   }
 }
+  /*上記コードのテストのためコメントアウト
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error('未ログインのためログ保存をスキップしました:', userError?.message);
+      return;
+    }
+
+    // 2. 実際の user.id を使って保存
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .insert([
+        {
+          user_id: user.id, // ★ 実際のログインユーザーIDを使用
+          menu_id: 1,
+        }
+      ]);
+
+    if (error) {
+      console.error('Supabaseへの保存に失敗しました:', error.message);
+    } else {
+      console.log('Supabaseへの保存が完全に成功しました！ 🎉');
+    }
+  } catch (err) {
+    console.error('通信エラーなど予期せぬ失敗:', err);
+  }
+
+  // ホーム画面ウィジェットを更新（連続日数・最終実施日時）。iOS 以外は no-op。
+  try {
+    const streakDays = await fetchStreakDays();
+    pushWidgetSnapshot({
+      streakDays,
+      lastWorkoutAt: result.endedAt,
+      reminderHour: DEFAULT_REMINDER_HOUR,
+    });
+  } catch (err) {
+    console.warn('[workoutService] ウィジェット更新をスキップ:', err);
+  }
+}
+*/
 
 /*export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   console.log('[workoutService] saveWorkoutSession (stub):', result);
