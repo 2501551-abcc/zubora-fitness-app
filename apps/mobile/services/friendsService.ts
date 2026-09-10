@@ -19,6 +19,18 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { supabase } from '@/supabase';
+
+/**
+ * 同じ topic の残存チャンネルを掃除する。
+ * supabase.channel(topic) は同名 topic が登録済みだと「既存の（購読済みかもしれない）
+ * チャンネル」を返すため、React StrictMode / Fast Refresh / 画面の再訪で
+ * `cannot add callbacks ... after subscribe()` が起きる。作成前に必ず呼ぶ。
+ */
+async function removeChannelsByTopic(topic: string): Promise<void> {
+  const realtimeTopic = `realtime:${topic}`;
+  const stale = supabase.getChannels().filter((c) => c.topic === realtimeTopic);
+  await Promise.all(stale.map((c) => supabase.removeChannel(c)));
+}
 import type {
   Friend,
   FriendRequest,
@@ -108,6 +120,8 @@ export async function removeFriend(friendUserId: string): Promise<void> {
  * ・購読開始/終了時に profiles.is_online も更新（postgres_changes 側の
  *   フォールバック用）
  */
+const PRESENCE_TOPIC = 'online-users';
+
 export function subscribeToPresence(onChange: (online: OnlineMap) => void): () => void {
   let channel: RealtimeChannel | null = null;
   let disposed = false;
@@ -115,11 +129,20 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
   const init = async () => {
     const { data: auth } = await supabase.auth.getUser();
     if (disposed) return;
-    const key = auth.user?.id ?? `anon-${Math.random().toString(36).slice(2)}`;
 
-    const newChannel = supabase.channel('online-users', {
+    // 前回の残存チャンネルを掃除してからでないと、既存の購読済みチャンネルが返り
+    // .on() が "after subscribe()" で落ちる
+    await removeChannelsByTopic(PRESENCE_TOPIC);
+    if (disposed) return;
+
+    const key = auth.user?.id ?? `anon-${Math.random().toString(36).slice(2)}`;
+    const newChannel = supabase.channel(PRESENCE_TOPIC, {
       config: { presence: { key } },
     });
+
+    // 掃除後でも別 init が先に購読していたら（並行実行）触らずに抜ける
+    if (String(newChannel.state) !== 'closed') return;
+    channel = newChannel;
 
     const emit = () => {
       const state = newChannel.presenceState<{ last_active_at?: string }>();
@@ -135,17 +158,13 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
     newChannel
       .on('presence', { event: 'sync' }, emit)
       .on('presence', { event: 'join' }, emit)
-      .on('presence', { event: 'leave' }, emit);
-
-    if (disposed) return;
-    channel = newChannel;
-
-    newChannel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        void newChannel.track({ last_active_at: new Date().toISOString() });
-        void supabase.rpc('update_my_presence', { p_is_online: true });
-      }
-    });
+      .on('presence', { event: 'leave' }, emit)
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void newChannel.track({ last_active_at: new Date().toISOString() });
+          void supabase.rpc('update_my_presence', { p_is_online: true });
+        }
+      });
   };
 
   void init();
@@ -153,9 +172,8 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
   return () => {
     disposed = true;
     void supabase.rpc('update_my_presence', { p_is_online: false });
-    if (channel) {
-      void supabase.removeChannel(channel);
-    }
+    channel = null;
+    void removeChannelsByTopic(PRESENCE_TOPIC);
   };
 }
 
@@ -165,39 +183,39 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
 
 /** friendships への変更（自分宛の申請など）を購読 */
 export function subscribeToFriendRequests(onChange: () => void): () => void {
-  let channel: RealtimeChannel | null = null;
   let disposed = false;
+  let topic: string | null = null;
 
   const init = async () => {
     const { data: auth } = await supabase.auth.getUser();
     if (disposed || !auth.user) return;
 
-    const newChannel = supabase.channel(`friendship-changes-${auth.user.id}`);
-
-    newChannel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'friendships',
-        filter: `user_id_b=eq.${auth.user.id}`,
-      },
-      () => onChange(),
-    );
-
+    topic = `friendship-changes-${auth.user.id}`;
+    await removeChannelsByTopic(topic);
     if (disposed) return;
-    channel = newChannel;
 
-    newChannel.subscribe();
+    const newChannel = supabase.channel(topic);
+    if (String(newChannel.state) !== 'closed') return;
+
+    newChannel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friendships',
+          filter: `user_id_b=eq.${auth.user.id}`,
+        },
+        () => onChange(),
+      )
+      .subscribe();
   };
 
   void init();
 
   return () => {
     disposed = true;
-    if (channel) {
-      void supabase.removeChannel(channel);
-    }
+    if (topic) void removeChannelsByTopic(topic);
   };
 }
 
@@ -208,19 +226,33 @@ export function subscribeToFriendRequests(onChange: () => void): () => void {
 export function subscribeToFriendPresenceRows(
   onChange: (userId: string, isOnline: boolean, lastSeen: string) => void,
 ): () => void {
-  const channel = supabase
-    .channel('friend-presence-rows')
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'users' },
-      (payload) => {
-        const row = payload.new as { id: string; is_online: boolean; last_seen: string };
-        onChange(row.id, row.is_online, row.last_seen);
-      },
-    )
-    .subscribe();
+  const TOPIC = 'friend-presence-rows';
+  let disposed = false;
+
+  const init = async () => {
+    await removeChannelsByTopic(TOPIC);
+    if (disposed) return;
+
+    const channel = supabase.channel(TOPIC);
+    if (String(channel.state) !== 'closed') return;
+
+    channel
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'users' },
+        (payload) => {
+          const row = payload.new as { id: string; is_online: boolean; last_seen: string };
+          onChange(row.id, row.is_online, row.last_seen);
+        },
+      )
+      .subscribe();
+  };
+
+  void init();
+
   return () => {
-    void supabase.removeChannel(channel);
+    disposed = true;
+    void removeChannelsByTopic(TOPIC);
   };
 }
 
