@@ -112,18 +112,17 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
   let channel: RealtimeChannel | null = null;
   let disposed = false;
 
-  (async () => {
+  const init = async () => {
     const { data: auth } = await supabase.auth.getUser();
     if (disposed) return;
     const key = auth.user?.id ?? `anon-${Math.random().toString(36).slice(2)}`;
 
-    channel = supabase.channel('online-users', {
+    const newChannel = supabase.channel('online-users', {
       config: { presence: { key } },
     });
 
     const emit = () => {
-      if (!channel) return;
-      const state = channel.presenceState<{ last_active_at?: string }>();
+      const state = newChannel.presenceState<{ last_active_at?: string }>();
       const map: OnlineMap = {};
       for (const [userId, metas] of Object.entries(state)) {
         map[userId] = {
@@ -133,22 +132,30 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
       onChange(map);
     };
 
-    channel
+    newChannel
       .on('presence', { event: 'sync' }, emit)
       .on('presence', { event: 'join' }, emit)
-      .on('presence', { event: 'leave' }, emit)
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          void channel?.track({ last_active_at: new Date().toISOString() });
-          void supabase.rpc('update_my_presence', { p_is_online: true });
-        }
-      });
-  })();
+      .on('presence', { event: 'leave' }, emit);
+
+    if (disposed) return;
+    channel = newChannel;
+
+    newChannel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        void newChannel.track({ last_active_at: new Date().toISOString() });
+        void supabase.rpc('update_my_presence', { p_is_online: true });
+      }
+    });
+  };
+
+  void init();
 
   return () => {
     disposed = true;
     void supabase.rpc('update_my_presence', { p_is_online: false });
-    if (channel) void supabase.removeChannel(channel);
+    if (channel) {
+      void supabase.removeChannel(channel);
+    }
   };
 }
 
@@ -161,27 +168,36 @@ export function subscribeToFriendRequests(onChange: () => void): () => void {
   let channel: RealtimeChannel | null = null;
   let disposed = false;
 
-  (async () => {
+  const init = async () => {
     const { data: auth } = await supabase.auth.getUser();
     if (disposed || !auth.user) return;
-    channel = supabase
-      .channel('friendship-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'friendships',
-          filter: `user_id_b=eq.${auth.user.id}`,
-        },
-        () => onChange(),
-      )
-      .subscribe();
-  })();
+
+    const newChannel = supabase.channel(`friendship-changes-${auth.user.id}`);
+
+    newChannel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'friendships',
+        filter: `user_id_b=eq.${auth.user.id}`,
+      },
+      () => onChange(),
+    );
+
+    if (disposed) return;
+    channel = newChannel;
+
+    newChannel.subscribe();
+  };
+
+  void init();
 
   return () => {
     disposed = true;
-    if (channel) void supabase.removeChannel(channel);
+    if (channel) {
+      void supabase.removeChannel(channel);
+    }
   };
 }
 
