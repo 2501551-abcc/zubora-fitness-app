@@ -38,6 +38,8 @@ alter table public.users add column if not exists is_online    boolean     not n
 alter table public.users add column if not exists last_seen    timestamptz not null default now();
 -- アバター絵文字（画像未設定時のフォールバック。フレンドからも見える）
 alter table public.users add column if not exists avatar_emoji text        not null default '✦';
+-- フレンドコード（例: ZBR-8A2K7X）。フレンド申請はこのコードのみで行う。
+alter table public.users add column if not exists friend_code text;
 
 -- サインアップ時にトリガー/クライアントが最小項目で insert できるよう既定値
 alter table public.users alter column preferred_time_of_day set default '20:00';
@@ -45,9 +47,57 @@ alter table public.users alter column notification_enabled  set default true;
 alter table public.users alter column created_at            set default now();
 alter table public.users alter column updated_at            set default now();
 
--- ID 指定でフレンド申請するため name を一意に（大文字小文字は無視）
--- ※ 既存データに重複名があると失敗します。先にクレンジングしてください。
-create unique index if not exists users_name_lower_unique on public.users (lower(name));
+-- 表示名は重複OK（自分の名前をそのまま使いたい人向け）。旧: lower(name) の一意 index は撤廃。
+drop index if exists public.users_name_lower_unique;
+
+-- フレンドコードの正規化（ハイフン・大小文字を無視して比較 / 一意判定）
+create or replace function public.canon_friend_code(code text)
+returns text language sql immutable as $$
+  select upper(regexp_replace(coalesce(code, ''), '[^A-Za-z0-9]', '', 'g'))
+$$;
+
+-- ランダムなフレンドコード生成（紛らわしい 0/O/1/I/L を除く 30 字から6桁 + ZBR-）
+create or replace function public.gen_friend_code()
+returns text language plpgsql volatile set search_path = public as $$
+declare
+  alphabet constant text := '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+  candidate text;
+  i int;
+  attempt int := 0;
+begin
+  loop
+    candidate := 'ZBR-';
+    for i in 1..6 loop
+      candidate := candidate || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    end loop;
+    exit when not exists (
+      select 1 from public.users
+      where public.canon_friend_code(friend_code) = public.canon_friend_code(candidate)
+    );
+    attempt := attempt + 1;
+    if attempt > 20 then
+      candidate := candidate || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+      exit;
+    end if;
+  end loop;
+  return candidate;
+end;
+$$;
+
+create unique index if not exists users_friend_code_canon_key
+  on public.users (public.canon_friend_code(friend_code))
+  where friend_code is not null;
+
+-- 既存ユーザーに採番（1行ずつ）→ 以後は必須＋既定値で自動採番
+do $$
+declare r record;
+begin
+  for r in select id from public.users where friend_code is null loop
+    update public.users set friend_code = public.gen_friend_code() where id = r.id;
+  end loop;
+end $$;
+alter table public.users alter column friend_code set default public.gen_friend_code();
+alter table public.users alter column friend_code set not null;
 
 create or replace function public.tg_set_updated_at()
 returns trigger language plpgsql as $$
@@ -80,9 +130,7 @@ begin
   if v_name is null then
     v_name := 'user_' || substr(replace(new.id::text, '-', ''), 1, 8);
   end if;
-  if exists (select 1 from public.users u where lower(u.name) = lower(v_name)) then
-    v_name := v_name || '_' || substr(replace(new.id::text, '-', ''), 1, 4);
-  end if;
+  -- 表示名は重複OKなのでサフィックス付与はしない。friend_code は列 default が自動採番。
 
   insert into public.users (id, name, avatar_url, avatar_emoji, preferred_time_of_day, notification_enabled)
   values (
@@ -281,8 +329,9 @@ create policy workout_logs_delete_self on public.workout_logs
 -- 6. RPC（クライアントは supabase.rpc('関数名', {...}) で呼ぶ）
 -- =====================================================================
 
--- 6-1. フレンド申請
-create or replace function public.send_friend_request(addressee_name text)
+-- 6-1. フレンド申請（フレンドコードで相手を検索）
+drop function if exists public.send_friend_request(text);
+create function public.send_friend_request(friend_code text)
 returns public.friendships
 language plpgsql
 security definer
@@ -293,10 +342,13 @@ declare
   v_target   uuid;
   v_existing public.friendships;
   v_row      public.friendships;
+  v_canon    text := public.canon_friend_code(friend_code);
 begin
   if v_me is null then raise exception 'AUTH_REQUIRED'; end if;
+  if v_canon = '' then raise exception 'USER_NOT_FOUND'; end if;
 
-  select id into v_target from public.users where lower(name) = lower(addressee_name);
+  select id into v_target from public.users u
+  where public.canon_friend_code(u.friend_code) = v_canon;
   if v_target is null then raise exception 'USER_NOT_FOUND'; end if;
   if v_target = v_me then raise exception 'CANNOT_ADD_SELF'; end if;
 
@@ -458,6 +510,26 @@ as $$
     coalesce((select count(*) from this_week), 0)::integer;
 $$;
 
+-- 6-8. 自分のフレンドコードを取得（無ければ採番して保存）
+create or replace function public.get_my_friend_code()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text;
+begin
+  if auth.uid() is null then raise exception 'AUTH_REQUIRED'; end if;
+  select friend_code into v_code from public.users where id = auth.uid();
+  if v_code is null or v_code = '' then
+    v_code := public.gen_friend_code();
+    update public.users set friend_code = v_code where id = auth.uid();
+  end if;
+  return v_code;
+end;
+$$;
+
 revoke all on function public.send_friend_request(text)                from public, anon;
 revoke all on function public.respond_to_friend_request(uuid, boolean) from public, anon;
 revoke all on function public.get_friends_with_status()                from public, anon;
@@ -465,6 +537,7 @@ revoke all on function public.get_incoming_friend_requests()           from publ
 revoke all on function public.update_my_presence(boolean)              from public, anon;
 revoke all on function public.delete_current_user()                    from public, anon;
 revoke all on function public.get_home_stats()                         from public, anon;
+revoke all on function public.get_my_friend_code()                     from public, anon;
 
 grant execute on function public.send_friend_request(text)                to authenticated;
 grant execute on function public.respond_to_friend_request(uuid, boolean) to authenticated;
@@ -473,6 +546,7 @@ grant execute on function public.get_incoming_friend_requests()           to aut
 grant execute on function public.update_my_presence(boolean)              to authenticated;
 grant execute on function public.delete_current_user()                    to authenticated;
 grant execute on function public.get_home_stats()                         to authenticated;
+grant execute on function public.get_my_friend_code()                     to authenticated;
 
 
 -- =====================================================================

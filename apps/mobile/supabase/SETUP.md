@@ -5,9 +5,10 @@
 1. **SQL**:
    - 初回: `supabase/schema.sql` を Supabase ダッシュボード > SQL Editor に貼って Run
      （既存の `users` / `friendships` / `workout_logs` への差分適用。再実行しても安全）
-   - 既に schema.sql 実行済みなら追加で以下も Run（どちらも schema.sql 側に反映済み・再実行可）
+   - 既に schema.sql 実行済みなら追加で以下も Run（すべて schema.sql 側に反映済み・再実行可）
      - `supabase/migration_02_avatar_emoji.sql`（アバター絵文字を `users` に持たせフレンド一覧にも表示）
      - `supabase/migration_03_home_stats.sql`（`workout_logs.duration_sec` 追加＋ホーム画面の実績 RPC `get_home_stats`）
+     - `supabase/migration_04_friend_code.sql`（表示名の一意制約を撤廃＋`users.friend_code` 導入。フレンド申請はコードのみ）
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage
@@ -26,7 +27,6 @@
 - [ ] `users.id` = `auth.users.id`（Supabase 標準）
 - [ ] `friendships.user_id_a` = 申請者 / `user_id_b` = 申請された側
 - [ ] `workout_logs` の1行 = 運動1回（`created_at` を実施日時として集計）
-- [ ] 既存 `users.name` に **大小文字を無視した重複が無い**（`lower(name)` ユニークIndex作成のため）
 - [ ] 既存 `friendships.status` の値が `pending` / `accepted` / `rejected` のみ
 - [ ] `users` 行を作る**既存トリガーの有無**（あれば `handle_new_user` は重複するので統合）
 
@@ -34,7 +34,7 @@
 
 | テーブル | 変更 |
 |---|---|
-| `users` | `is_online` `last_seen` 追加 / `preferred_time_of_day`(=`'20:00'`)・`notification_enabled`(=`true`)・`created_at`・`updated_at` に既定値 / `lower(name)` ユニークIndex / `updated_at`トリガー / signup時の`handle_new_user`トリガー |
+| `users` | `is_online` `last_seen` `avatar_emoji` `friend_code` 追加 / 各種既定値 / `friend_code` 自動採番＋一意Index（`name` は重複OK）/ `updated_at`トリガー / signup時の`handle_new_user`トリガー |
 | `friendships` | `status` CHECK(3値) / `updated_at` 追加 / 自己参照禁止 / A↔B重複防止Index / FK補完 |
 | `workout_logs` | 集計用Index / **RLS有効化** |
 | （新規）`user_workout_stats` ビュー | 連続日数・お休み日数・自己ベスト（JST暦日） |
@@ -60,7 +60,8 @@ await supabase.from('workout_logs').insert({ user_id: user.id, menu_id: menuId }
    - 本番は ON ＋ **URL Configuration > Redirect URLs** にディープリンク
      （`app.json` の `scheme` を確認。例 `zubora://auth-callback`）
 3. `signUp` は `options.data` に `name` / `preferred_time_of_day`（`'HH:MM'`）を渡すだけ。
-   `handle_new_user` トリガーが `users` 行を作ります（name 重複時は自動サフィックス）。
+   `handle_new_user` トリガーが `users` 行を作り、`friend_code` は列 default が自動採番します。
+   表示名（`name`）は重複OK。フレンド申請は `friend_code`（例 `ZBR-8A2K7X`）で行います。
 
 ## Realtime 設定（ダッシュボード > Database > Replication）
 
@@ -114,7 +115,7 @@ await signOut();
 const friends  = await getFriendsWithWorkoutStatus(); // 継続日数順
 const requests = await getIncomingFriendRequests();
 
-const res = await sendFriendRequest('あいての名前');
+const res = await sendFriendRequest('ZBR-8A2K7X'); // 相手のフレンドコード
 if (!res.ok) console.log(res.reason); // 'not_found' | 'already_friend' | 'already_requested' | 'self'
 await acceptFriendRequest(requestId);
 await rejectFriendRequest(requestId);

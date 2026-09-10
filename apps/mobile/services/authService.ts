@@ -191,7 +191,23 @@ export type AccountInfo = {
   preferredTimeOfDay: string;
   /** 通知を受け取るか */
   notificationEnabled: boolean;
+  /** フレンド申請に使う固有コード（例: ZBR-8A2K7X）。未取得なら '' */
+  friendCode: string;
 };
+
+/**
+ * 自分のフレンドコードを取得（無ければサーバー側で採番・保存）。
+ * 未ログイン時は ''。
+ */
+export async function fetchMyFriendCode(): Promise<string> {
+  try {
+    const { data, error } = await supabase.rpc('get_my_friend_code');
+    if (error || typeof data !== 'string') return '';
+    return data;
+  } catch {
+    return '';
+  }
+}
 
 /** 設定画面の初期表示に必要な情報をまとめて取得 */
 export async function getAccountInfo(): Promise<AccountInfo | null> {
@@ -205,13 +221,16 @@ export async function getAccountInfo(): Promise<AccountInfo | null> {
   try {
     const { data } = await supabase
       .from('users')
-      .select('name, avatar_url, avatar_emoji, preferred_time_of_day, notification_enabled')
+      .select('name, avatar_url, avatar_emoji, preferred_time_of_day, notification_enabled, friend_code')
       .eq('id', user.id)
       .single();
     if (data) profile = data as Partial<AppUser>;
   } catch {
     // users 行がまだ無い場合は metadata / 既定値で表示
   }
+
+  // 行に friend_code が無い場合だけ RPC で採番（通常は 1 回のクエリで済む）
+  const friendCode = profile.friend_code || (await fetchMyFriendCode());
 
   return {
     userId: user.id,
@@ -223,6 +242,7 @@ export async function getAccountInfo(): Promise<AccountInfo | null> {
     avatarUrl: profile.avatar_url ?? null,
     preferredTimeOfDay: toHm(profile.preferred_time_of_day ?? '20:00'),
     notificationEnabled: profile.notification_enabled ?? true,
+    friendCode,
   };
 }
 

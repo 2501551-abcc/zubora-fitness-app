@@ -12,6 +12,7 @@
  */
 
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -52,6 +53,7 @@ const GUEST_ACCOUNT: AccountInfo = {
   avatarUrl: null,
   preferredTimeOfDay: '20:00',
   notificationEnabled: true,
+  friendCode: '',
 };
 
 type Editing = null | 'profile' | 'email' | 'password' | 'time';
@@ -64,6 +66,7 @@ export default function SettingsScreen() {
   const [loggedOut, setLoggedOut] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<Editing>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // 未ログインでも設定画面は閲覧できる（ゲスト表示）。保存系だけログインへ誘導する。
   const isGuest = loggedOut || !account;
@@ -282,7 +285,6 @@ export default function SettingsScreen() {
 
         {/* プロフィール（フレンドから見える情報） */}
         <View style={styles.profileCard}>
-          <Text style={styles.decoGlyphCorner}>{MonoGlyph.ribbon}</Text>
           <View style={styles.avatarRing}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarEmoji}>{view.avatarEmoji}</Text>
@@ -316,6 +318,39 @@ export default function SettingsScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* フレンドコード（共有用） */}
+        {!isGuest && (
+          <>
+            <SectionLabel>フレンドコード</SectionLabel>
+            <Pressable
+              style={[styles.card, styles.friendCodeCard]}
+              onPress={() => {
+                if (!view.friendCode) return;
+                tapLight();
+                void Clipboard.setStringAsync(view.friendCode);
+                setCodeCopied(true);
+                setTimeout(() => setCodeCopied(false), 1600);
+              }}>
+              <Text style={styles.friendCodeHint}>
+                相手に伝えると申請してもらえます
+              </Text>
+              <View style={styles.friendCodeRow}>
+                <Text style={styles.friendCodeValue}>{view.friendCode || '—'}</Text>
+                <View style={styles.copyPill}>
+                  <Feather
+                    name={codeCopied ? 'check' : 'copy'}
+                    size={12}
+                    color={MonoColors.accent}
+                  />
+                  <Text style={styles.copyPillText}>
+                    {codeCopied ? 'コピー済み' : 'コピー'}
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+          </>
+        )}
 
         {/* アカウント情報（認証） */}
         <SectionLabel>アカウント情報</SectionLabel>
@@ -731,7 +766,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     overflow: 'hidden',
   },
-  decoGlyphCorner: { position: 'absolute', top: 10, right: 14, fontSize: 15, opacity: 0.7 },
   avatarRing: {
     padding: 4,
     borderRadius: MonoLayout.radiusPill,
@@ -801,6 +835,29 @@ const styles = StyleSheet.create({
   rowLabelStrong: { flex: 1, fontSize: 15, fontWeight: '600', color: MonoColors.inkSoft },
   rowValue: { fontSize: 15, color: MonoColors.ink, marginTop: 2 },
   actionText: { fontSize: 13, fontWeight: '700', color: MonoColors.ink },
+  friendCodeCard: { paddingVertical: 14, paddingHorizontal: 16, gap: 8 },
+  friendCodeHint: { fontSize: 11, color: MonoColors.textSecondary },
+  friendCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  friendCodeValue: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: MonoColors.ink,
+  },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: MonoColors.accentTint,
+    borderRadius: MonoLayout.radiusPill,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+  },
+  copyPillText: { fontSize: 10, fontWeight: '700', color: MonoColors.accent },
   divider: { height: 1, backgroundColor: MonoColors.border, marginLeft: 46 },
 
   warnBadge: {
