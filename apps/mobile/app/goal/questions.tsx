@@ -5,42 +5,30 @@
  *  - 単一選択 / はい・いいえ … タップしたら自動で次へ
  *  - 複数選択（器具）… トグルして「次へ」。'none'（自重のみ）は他と排他
  * 最後まで答えたら生成中画面へ。
+ * モノトーン基調 ＋ 星のあしらいで認証画面とトーンを統一。
  */
+
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   GOAL_QUESTIONS,
   type GoalQuestion,
   type OptionValue,
 } from '@/constants/goal-questions';
-import { WorkoutColors } from '@/constants/workout-theme';
+import { MonoColors, MonoLayout } from '@/constants/mono-theme';
 import { goalDraft } from '@/lib/goal-draft';
 import { tapImpact, tapLight } from '@/lib/haptics';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 const TOTAL = GOAL_QUESTIONS.length;
 
 export default function GoalQuestionsScreen() {
   const router = useRouter();
   const [index, setIndex] = useState(0);
-  const [picked, setPicked] = useState<OptionValue | null>(null);
-  const [multiSel, setMultiSel] = useState<OptionValue[]>([]);
 
   const q: GoalQuestion = GOAL_QUESTIONS[index];
-
-  // 質問が変わったら選択状態を下書きから復元
-  useEffect(() => {
-    const saved = goalDraft.getAnswer(q.field);
-    if (q.kind === 'multi') {
-      setMultiSel(Array.isArray(saved) ? saved : []);
-      setPicked(null);
-    } else {
-      setMultiSel([]);
-      setPicked(saved === undefined || Array.isArray(saved) ? null : saved);
-    }
-  }, [index, q.field, q.kind]);
 
   const goNext = () => {
     if (index >= TOTAL - 1) {
@@ -58,15 +46,52 @@ export default function GoalQuestionsScreen() {
     }
   };
 
-  // 単一選択・はい/いいえ：選んだら自動で次へ
+  const progress = ((index + 1) / TOTAL) * 100;
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.topRow}>
+        <Pressable onPress={goBack} hitSlop={12}>
+          <Text style={styles.back}>‹</Text>
+        </Pressable>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progress}%` }]} />
+        </View>
+        <Text style={styles.count}>
+          {index + 1} / {TOTAL}
+        </Text>
+      </View>
+
+      {/* key で問題ごとに選択状態をリセット（下書きから復元） */}
+      <QuestionStep key={q.field} question={q} onNext={goNext} />
+    </SafeAreaView>
+  );
+}
+
+/* ---------- 1問ぶんの選択UI ---------- */
+
+function QuestionStep({
+  question: q,
+  onNext,
+}: {
+  question: GoalQuestion;
+  onNext: () => void;
+}) {
+  const saved = goalDraft.getAnswer(q.field);
+  const [picked, setPicked] = useState<OptionValue | null>(
+    q.kind === 'multi' || saved === undefined || Array.isArray(saved) ? null : saved,
+  );
+  const [multiSel, setMultiSel] = useState<OptionValue[]>(
+    q.kind === 'multi' && Array.isArray(saved) ? saved : [],
+  );
+
   const pickSingle = (value: OptionValue) => {
     tapLight();
     setPicked(value);
     goalDraft.setAnswer(q.field, value);
-    setTimeout(goNext, 180);
+    setTimeout(onNext, 180);
   };
 
-  // 複数選択：トグル（'none' は排他）
   const toggleMulti = (value: OptionValue) => {
     tapLight();
     setMultiSel((prev) => {
@@ -83,26 +108,11 @@ export default function GoalQuestionsScreen() {
     if (multiSel.length === 0) return;
     tapImpact();
     goalDraft.setAnswer(q.field, multiSel);
-    goNext();
+    onNext();
   };
 
-  const progress = ((index + 1) / TOTAL) * 100;
-
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* 進捗＋戻る */}
-      <View style={styles.topRow}>
-        <Pressable onPress={goBack} hitSlop={12}>
-          <Text style={styles.back}>‹</Text>
-        </Pressable>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress}%` }]} />
-        </View>
-        <Text style={styles.count}>
-          {index + 1} / {TOTAL}
-        </Text>
-      </View>
-
+    <>
       <Text style={styles.title}>{q.title}</Text>
       {q.hint ? <Text style={styles.hint}>{q.hint}</Text> : null}
 
@@ -138,19 +148,17 @@ export default function GoalQuestionsScreen() {
       ) : (
         <Text style={styles.footerHint}>タップで次の質問へ進みます</Text>
       )}
-    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WorkoutColors.screenBg,
-    paddingHorizontal: 20,
+    backgroundColor: MonoColors.screenBg,
+    paddingHorizontal: MonoLayout.screenPadding,
   },
-  flex: {
-    flex: 1,
-  },
+  flex: { flex: 1 },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -159,36 +167,36 @@ const styles = StyleSheet.create({
   },
   back: {
     fontSize: 30,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.inkSoft,
     lineHeight: 30,
   },
   progressTrack: {
     flex: 1,
     height: 6,
-    backgroundColor: WorkoutColors.border,
-    borderRadius: 999,
+    backgroundColor: MonoColors.surfaceAlt,
+    borderRadius: MonoLayout.radiusPill,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: WorkoutColors.primary,
-    borderRadius: 999,
+    backgroundColor: MonoColors.ink,
+    borderRadius: MonoLayout.radiusPill,
   },
   count: {
     fontSize: 12,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
     minWidth: 44,
     textAlign: 'right',
   },
   title: {
     fontSize: 21,
     fontWeight: '700',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
     marginTop: 24,
   },
   hint: {
     fontSize: 13,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
     marginTop: 6,
   },
   options: {
@@ -199,49 +207,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
-    borderRadius: 16,
+    borderColor: MonoColors.border,
+    borderRadius: MonoLayout.radiusControl,
     paddingVertical: 16,
     paddingHorizontal: 18,
   },
   optionActive: {
-    backgroundColor: WorkoutColors.primary,
-    borderColor: WorkoutColors.primary,
+    backgroundColor: MonoColors.ink,
+    borderColor: MonoColors.ink,
   },
   optionText: {
     fontSize: 16,
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
   },
   optionTextActive: {
-    color: WorkoutColors.onAccent,
+    color: MonoColors.onInk,
     fontWeight: '600',
   },
   check: {
-    color: WorkoutColors.onAccent,
+    color: MonoColors.onInk,
     fontSize: 16,
     fontWeight: '700',
   },
   footerHint: {
     textAlign: 'center',
     fontSize: 12,
-    color: WorkoutColors.textMuted,
+    color: MonoColors.textMuted,
     marginBottom: 12,
   },
   nextButton: {
-    backgroundColor: WorkoutColors.primary,
-    borderRadius: 16,
+    backgroundColor: MonoColors.ink,
+    borderRadius: MonoLayout.radiusControl,
     paddingVertical: 16,
     alignItems: 'center',
     marginBottom: 12,
   },
-  nextDisabled: {
-    opacity: 0.4,
-  },
+  nextDisabled: { opacity: 0.4 },
   nextText: {
-    color: WorkoutColors.onAccent,
+    color: MonoColors.onInk,
     fontSize: 16,
     fontWeight: '700',
+    letterSpacing: 1,
   },
 });
