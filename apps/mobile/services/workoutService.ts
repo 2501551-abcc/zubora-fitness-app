@@ -157,7 +157,7 @@ export async function savePoseAnalysisResult(result: PoseAnalysisResult): Promis
   try {
     const { error } = await supabase.from('workout_logs').insert({
       user_id: user.id,
-      menu_id: result.menuId,
+      ...(result.menuId !== undefined ? { menu_id: result.menuId } : {}),
       total_reps: result.totalReps,
       good_reps: result.goodReps,
       rep_log: result.repLog,

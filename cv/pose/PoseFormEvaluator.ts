@@ -91,6 +91,15 @@ export class PoseFormEvaluator {
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
+  /**
+   * 目標回数に関係なく、いつでも自分でセッションを終了できるようにするための
+   * 手動終了メソッド。今までのログを確定して返し、以降のprocessFrameは無視される。
+   */
+  public endSession(): RepLog[] {
+    this.phase = 'finished';
+    return [...this.repLog];
+  }
+
   public speakAdvice(text: string) {
     // 話している最中なら、今回のアドバイスは諦める（割り込ませない）
     if (this.isSpeaking) return;

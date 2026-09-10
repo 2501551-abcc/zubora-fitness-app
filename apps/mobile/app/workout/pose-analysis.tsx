@@ -1,10 +1,17 @@
 /**
  * フォーム判定画面（"/workout/pose-analysis"）
  * -------------------------------------------------------------
- * /workout/menu で「スクワット」のようなpose系メニューを選ぶとここへ来る。
- * カメラでリアルタイムに姿勢推定し、目標回数（DBのtarget_reps。既定10回）の
- * 正しいフォームが貯まったらセッションを終了し、結果をSupabase(workout_logs)
- * に保存してサマリーを表示する。
+ * 筋トレタイマー画面（/workout/session）のヘッダーにある「スクワット」
+ * ボタンから push で重なる形で開く。session側のタイマーはこの画面が
+ * 開いている間もバックグラウンドで動き続ける（sessionを閉じていないため）。
+ *
+ * 目標回数は決めない。終了は以下のどちらか:
+ *   - このボタンで自分から終了する
+ *   - セッション全体の残り時間が0になる（このタイマー表示はあくまで目安。
+ *     実際の終了処理は session.tsx 側のタイマーが担う）
+ * 終了すると、結果をSupabase(workout_logs)に保存してサマリーを表示する。
+ * 「セッションに戻る」でこの画面を閉じると、session.tsx（動き続けている）
+ * か、既にタイマーが0になっていれば summary が router.back() で見える。
  *
  * 種目のロジック自体は cv/pose/ 以下（PoseFormEvaluator / exerciseConfig、
  * cv担当者の管理下）に切り出してあるので、このファイルは
@@ -25,6 +32,9 @@ import { Camera } from 'react-native-vision-camera';
 import { Delegate, MediapipeCamera, RunningMode, usePoseDetection } from 'react-native-mediapipe';
 
 const POSE_MODEL = 'pose_landmarker_full.task';
+// 目標回数を決めない運用にしたので、事実上「到達しない」大きな値にして
+// PoseFormEvaluator側の自動終了（10回で切り上げる機能）を無効化する。
+const NO_TARGET_REPS = 999999;
 
 export default function PoseAnalysisScreen() {
   const router = useRouter();
@@ -33,19 +43,24 @@ export default function PoseAnalysisScreen() {
     exerciseKey?: string;
     name?: string;
     targetReps?: string;
+    sessionEndTime?: string; // session.tsx から渡される、セッション全体の終了予定時刻(ms)
   }>();
 
-  const menuId = Number(params.menuId) || 0;
+  const menuId = params.menuId ? Number(params.menuId) : undefined;
   const exerciseKey = params.exerciseKey ?? 'squat';
-  const displayName = params.name ?? 'フォーム判定';
+  const displayName = params.name ?? 'スクワット';
   const targetRepsParam = Number(params.targetReps);
+  const sessionEndTime = params.sessionEndTime ? Number(params.sessionEndTime) : null;
 
   const baseConfig = EXERCISE_CONFIGS[exerciseKey] ?? EXERCISE_CONFIGS.squat;
-  // DB側のtarget_repsが指定されていればそちらを優先（未指定ならコード側の既定値）
-  const config =
-    Number.isFinite(targetRepsParam) && targetRepsParam > 0
-      ? { ...baseConfig, targetGoodReps: targetRepsParam }
-      : baseConfig;
+  // targetRepsが明示的に渡されていればそれを目標にする（今は使っていないが、
+  // 将来メニュー経由の呼び出しを復活させたときのために残してある）。
+  // 渡されていなければ「回数を決めない」運用として自動終了を無効化する。
+  const config = {
+    ...baseConfig,
+    targetGoodReps:
+      Number.isFinite(targetRepsParam) && targetRepsParam > 0 ? targetRepsParam : NO_TARGET_REPS,
+  };
 
   const [count, setCount] = useState(0);
   const [score, setScore] = useState<number | null>(null);
@@ -53,6 +68,7 @@ export default function PoseAnalysisScreen() {
   const [isReady, setIsReady] = useState(false);
   const [sessionLog, setSessionLog] = useState<RepLog[] | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [remainingLabel, setRemainingLabel] = useState<string | null>(null);
 
   const savedRef = useRef(false);
 
@@ -61,6 +77,23 @@ export default function PoseAnalysisScreen() {
       setHasCameraPermission(status === 'granted');
     });
   }, []);
+
+  // セッション全体の残り時間を、表示用に1秒ごと計算する。
+  // 実際のタイマー処理（0になったときの終了・保存）はsession.tsx側が担っており、
+  // この画面が開いている間もsession.tsxはバックグラウンドで動き続けている。
+  useEffect(() => {
+    if (sessionEndTime === null) return;
+
+    const tick = () => {
+      const leftSec = Math.max(0, Math.round((sessionEndTime - Date.now()) / 1000));
+      const m = Math.floor(leftSec / 60);
+      const s = leftSec % 60;
+      setRemainingLabel(`残り ${m}:${String(s).padStart(2, '0')}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [sessionEndTime]);
 
   const evaluatorRef = useRef<PoseFormEvaluator | null>(null);
   if (evaluatorRef.current === null) {
@@ -122,9 +155,19 @@ export default function PoseAnalysisScreen() {
     });
   }, [sessionLog, menuId]);
 
-  const backToMenu = () => {
+  const backToSession = () => {
     tapImpact();
-    router.replace('/workout/menu');
+    // pushで重ねてきた画面を閉じる。下に残っているsession.tsx
+    // （もしくは、その間にタイマーが0になっていればsummary）が表示される。
+    router.back();
+  };
+
+  // 「終了する」ボタン：目標回数に関係なく、いつでも自分から終了できる
+  const finishManually = () => {
+    if (sessionLog !== null) return;
+    tapImpact();
+    const log = evaluatorRef.current?.endSession() ?? [];
+    setSessionLog(log);
   };
 
   // --- セッション終了画面 ---
@@ -149,8 +192,8 @@ export default function PoseAnalysisScreen() {
             </View>
           ))}
         </ScrollView>
-        <Pressable style={styles.backButton} onPress={backToMenu}>
-          <Text style={styles.backButtonText}>メニューに戻る</Text>
+        <Pressable style={styles.backButton} onPress={backToSession}>
+          <Text style={styles.backButtonText}>セッションに戻る</Text>
         </Pressable>
       </View>
     );
@@ -171,8 +214,15 @@ export default function PoseAnalysisScreen() {
       <MediapipeCamera style={StyleSheet.absoluteFill} solution={poseDetection} activeCamera="front" />
 
       <View style={styles.overlay}>
-        <View style={[styles.badge, { backgroundColor: isReady ? '#4CAF50' : '#F44336' }]}>
-          <Text style={styles.badgeText}>{isReady ? 'READY' : 'NOT READY'}</Text>
+        <View style={styles.topRow}>
+          <View style={[styles.badge, { backgroundColor: isReady ? '#4CAF50' : '#F44336' }]}>
+            <Text style={styles.badgeText}>{isReady ? 'READY' : 'NOT READY'}</Text>
+          </View>
+          {remainingLabel && (
+            <View style={styles.remainingPill}>
+              <Text style={styles.remainingPillText}>{remainingLabel}</Text>
+            </View>
+          )}
         </View>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
@@ -184,8 +234,13 @@ export default function PoseAnalysisScreen() {
             <Text style={styles.statValue}>{score !== null ? `${score}点` : '--'}</Text>
           </View>
         </View>
-        <View style={styles.adviceCard}>
-          <Text style={styles.adviceText}>{advice}</Text>
+        <View style={{ width: '100%' }}>
+          <View style={styles.adviceCard}>
+            <Text style={styles.adviceText}>{advice}</Text>
+          </View>
+          <Pressable style={styles.finishButton} onPress={finishManually}>
+            <Text style={styles.finishButtonText}>終了する</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -195,14 +250,37 @@ export default function PoseAnalysisScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   overlay: { flex: 1, padding: 20, justifyContent: 'space-between', alignItems: 'center' },
-  badge: { marginTop: 40, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 40,
+  },
+  badge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   badgeText: { color: '#FFF', fontWeight: 'bold' },
+  remainingPill: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  remainingPillText: { color: WorkoutColors.soft, fontSize: 12, fontWeight: '600' },
   statsRow: { flexDirection: 'row', width: '100%', justifyContent: 'space-around' },
   statBox: { backgroundColor: 'rgba(0,0,0,0.6)', padding: 15, borderRadius: 12, alignItems: 'center', width: '40%' },
   statLabel: { color: '#AAA', fontSize: 12 },
   statValue: { color: '#FFF', fontSize: 28, fontWeight: 'bold' },
-  adviceCard: { backgroundColor: 'rgba(255,255,255,0.9)', padding: 20, borderRadius: 12, width: '100%', marginBottom: 20 },
+  adviceCard: { backgroundColor: 'rgba(255,255,255,0.9)', padding: 20, borderRadius: 12, width: '100%', marginBottom: 12 },
   adviceText: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', color: '#333' },
+  finishButton: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderRadius: WorkoutLayout.radiusControl,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  finishButtonText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
 
   summaryContainer: { flex: 1, backgroundColor: '#111', paddingTop: 60, paddingHorizontal: 20 },
   summaryTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold', textAlign: 'center' },

@@ -77,7 +77,8 @@ export interface PoseRepLog {
 
 /** フォーム判定セッション1回分の結果。完了時に savePoseAnalysisResult() へ渡す。 */
 export interface PoseAnalysisResult {
-  menuId: number;
+  /** DBのworkout_menus由来。メニュー経由で呼ばれていない場合はundefined */
+  menuId?: number;
   totalReps: number;
   goodReps: number;
   repLog: PoseRepLog[];

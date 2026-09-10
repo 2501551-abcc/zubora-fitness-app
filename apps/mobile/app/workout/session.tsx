@@ -16,6 +16,7 @@ import { formatTime } from '@/lib/format-time';
 import { notifySuccess, tapLight } from '@/lib/haptics';
 import { saveWorkoutSession } from '@/services/workoutService';
 import { LEVEL_LABELS, type WorkoutLevel, type WorkoutResult } from '@/types/workout';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -106,6 +107,18 @@ export default function WorkoutSessionScreen() {
     router.replace('/(tabs)');
   }, [finish, remainingSec, router]);
 
+  // スクワット画面を「push」する（sessionを閉じずに上に重ねる）。
+  // これにより、この画面のタイマー用interval（上のuseEffect）は
+  // スクワット画面が表示されている間もバックグラウンドで動き続ける。
+  // 時間切れになれば、そのuseEffectがいつも通り自動でsummaryへ遷移する。
+  const startSquat = useCallback(() => {
+    tapLight();
+    router.push({
+      pathname: '/workout/pose-analysis',
+      params: { sessionEndTime: String(endTimeRef.current) },
+    });
+  }, [router]);
+
   const progress = plannedSec > 0 ? remainingSec / plannedSec : 0;
 
   return (
@@ -113,6 +126,12 @@ export default function WorkoutSessionScreen() {
       {/* ヘッダー */}
       <View style={styles.header}>
         <Text style={styles.levelTag}>{LEVEL_LABELS[level]}</Text>
+        <Pressable
+          style={({ pressed }) => [styles.squatButton, pressed && styles.squatButtonPressed]}
+          onPress={startSquat}>
+          <Feather name="camera" size={13} color={WorkoutColors.deep} />
+          <Text style={styles.squatButtonText}>スクワット</Text>
+        </Pressable>
         <Pressable onPress={quit} hitSlop={12}>
           <Text style={styles.close}>✕</Text>
         </Pressable>
@@ -188,6 +207,21 @@ const styles = StyleSheet.create({
   close: {
     color: WorkoutColors.soft,
     fontSize: 22,
+  },
+  squatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: WorkoutColors.accent,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  squatButtonPressed: { opacity: 0.85 },
+  squatButtonText: {
+    color: WorkoutColors.deep,
+    fontSize: 12,
+    fontWeight: '600',
   },
   center: {
     alignItems: 'center',
