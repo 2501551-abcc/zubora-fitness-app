@@ -21,10 +21,10 @@
 
 | 項目 | 採用 |
 |---|---|
-| フレームワーク | React Native `0.81.5` / React `19.1.0` |
-| プラットフォーム | Expo `~54`（`expo` SDK 54） |
-| ルーティング | **Expo Router `~6`**（ファイルベース・Stack + Tabs） |
-| アニメーション | react-native-reanimated `~4.1` |
+| フレームワーク | React Native `0.86.3` / React `19.2.3` |
+| プラットフォーム | Expo `~57`（`expo` SDK 57） |
+| ルーティング | **Expo Router `~57`**（ファイルベース・Stack + Tabs） |
+| アニメーション | react-native-reanimated `~4.5` |
 | ハプティクス | expo-haptics |
 | バックエンド想定 | Supabase（`@supabase/supabase-js` 導入済み）＋ Gemini（ロードマップ生成） |
 | 状態管理 | 外部ライブラリなし。画面ローカルの `useState` ＋ 軽量モジュールストア（後述） |

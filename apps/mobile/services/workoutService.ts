@@ -56,7 +56,16 @@ export async function fetchDefaultDurationSec(): Promise<number> {
  */
 
 export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
-  console.log('[workoutService] saveWorkoutSession (Supabase送信開始):', result);
+  console.log('[workoutService] saveWorkoutSession:', result);
+
+  // workout_logs は RLS 有効。user_id はログイン中ユーザーの id である必要がある。
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    console.warn('[workoutService] 未ログインのため保存をスキップしました');
+    return;
+  }
 
   try {
     // 1. ログイン中のユーザー情報を取得
@@ -67,20 +76,18 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
       return;
     }
 
-    // 2. 実際の user.id を使って保存
-    const { data, error } = await supabase
-      .from('workout_logs')
-      .insert([
-        {
-          user_id: user.id, // ★ 仮IDから実際のログインユーザーIDへ修正
-          menu_id: 1,
-        }
-      ]);
+
+    // menu_id は現状 UI に無いため null。AI選択メニューを保存する場合はここに追加。
+    // result の各項目（時間・強度・完走可否）を保存したくなったらカラム追加＋ここへ。
+    const { error } = await supabase.from('workout_logs').insert({
+      user_id: user.id,
+      // created_at は DB 側 default now() が入る（= 実施日時として集計に使用）
+    });
 
     if (error) {
       console.error('Supabaseへの保存に失敗しました:', error.message);
     } else {
-      console.log('Supabaseへの保存が完全に成功しました！ 🎉');
+      console.log('Supabaseへの保存に成功しました 🎉');
     }
   } catch (err) {
     console.error('通信エラーなど予期せぬ失敗:', err);

@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../supabase';
 
 // ★ 1. expo-notifications のインポート
 import * as Notifications from 'expo-notifications';
@@ -40,6 +41,7 @@ const DEFAULT_MINUTES = 15;
 
 const LEVELS: WorkoutLevel[] = ['easy', 'normal', 'hard'];
 
+/*
 // ★ 3. 通知セット関数（修正版）
 const scheduleNextWorkoutNotification = async () => {
   try {
@@ -64,6 +66,65 @@ const scheduleNextWorkoutNotification = async () => {
     console.log('❌ 通知予約エラー:', error);
   }
 };
+*/
+
+// ★ 3. 本格版：Supabaseから通知時間を取得して毎日繰り返し通知を予約する関数
+const scheduleNextWorkoutNotification = async () => {
+  try {
+    // 既存の予約をクリア
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    // ログインユーザーの取得
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log('⚠️ ユーザー未ログインのため通知予約をスキップしました');
+      return;
+    }
+
+    // usersテーブルから設定を取得
+    const { data: profile, error } = await supabase
+      .from('users')
+      .select('preferred_time_of_day, notification_enabled')
+      .eq('id', user.id)
+      .single();
+
+    if (error) {
+      console.log('❌ 通知設定の取得エラー:', error.message);
+      return;
+    }
+
+    // 通知がオフの場合は予約しない
+    if (!profile || !profile.notification_enabled) {
+      console.log('ℹ️ ユーザーの通知設定がオフになっています');
+      return;
+    }
+
+    // "21:00:00" などの文字列から「時」と「分」を取得
+    const timeString = profile.preferred_time_of_day || '21:00:00';
+    const [hourStr, minuteStr] = timeString.split(':');
+    const targetHour = parseInt(hourStr, 10);
+    const targetMinute = parseInt(minuteStr, 10);
+
+    // 毎日指定時刻に繰り返し通知を予約
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '💖 今日もゆるっといこう！',
+        body: '今日の筋トレタイムだよ！サクッと動いてロードマップを進めよう✨',
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: targetHour,
+        minute: targetMinute,
+      },
+    });
+
+    console.log(`✅ 毎日 ${targetHour}:${targetMinute.toString().padStart(2, '0')} のリマインド通知を予約しました！`);
+  } catch (error) {
+    console.log('❌ 通知予約エラー:', error);
+  }
+};
+
 
 export default function PrepareScreen() {
   const router = useRouter();

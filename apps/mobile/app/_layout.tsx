@@ -1,9 +1,11 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import 'react-native-reanimated';
 
+import { GlobalMenuBar } from '@/components/home-menu-bar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
 import { fetchStreakDays } from '@/services/workoutService';
@@ -32,19 +34,27 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* 筋トレフロー：準備 → 筋トレ → サマリー */}
-        <Stack.Screen name="workout/prepare" options={{ headerShown: false }} />
-        <Stack.Screen name="workout/session" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="workout/summary" options={{ headerShown: false, gestureEnabled: false }} />
-        {/* 目標ロードマップ：入力 → 10問 → 生成中 → ツリー */}
-        <Stack.Screen name="goal/create" options={{ headerShown: false }} />
-        <Stack.Screen name="goal/questions" options={{ headerShown: false }} />
-        <Stack.Screen name="goal/generating" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="goal/index" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
+      <View style={{ flex: 1 }}>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          {/* 筋トレフロー：準備 → 筋トレ → サマリー */}
+          <Stack.Screen name="workout/prepare" options={{ headerShown: false }} />
+          <Stack.Screen name="workout/session" options={{ headerShown: false, gestureEnabled: false }} />
+          <Stack.Screen name="workout/summary" options={{ headerShown: false, gestureEnabled: false }} />
+          {/* 目標ロードマップ：入力 → 10問 → 生成中 → ツリー */}
+          <Stack.Screen name="goal/create" options={{ headerShown: false }} />
+          <Stack.Screen name="goal/questions" options={{ headerShown: false }} />
+          <Stack.Screen name="goal/generating" options={{ headerShown: false, gestureEnabled: false }} />
+          <Stack.Screen name="goal/index" options={{ headerShown: false }} />
+          {/* 認証・設定 */}
+          <Stack.Screen name="auth" options={{ headerShown: false }} />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
+          {/* フレンド */}
+          <Stack.Screen name="friends" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        </Stack>
+        <GlobalMenuBar />
+      </View>
       <StatusBar style="auto" />
     </ThemeProvider>
   );
