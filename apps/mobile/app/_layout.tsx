@@ -37,7 +37,9 @@ export default function RootLayout() {
       <View style={{ flex: 1 }}>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          {/* 筋トレフロー：準備 → 筋トレ → サマリー */}
+          {/* 筋トレフロー：メニュー選択 → (時間タイマー式 or フォーム判定) → サマリー */}
+          <Stack.Screen name="workout/menu" options={{ headerShown: false }} />
+          <Stack.Screen name="workout/pose-analysis" options={{ headerShown: false, gestureEnabled: false }} />
           <Stack.Screen name="workout/prepare" options={{ headerShown: false }} />
           <Stack.Screen name="workout/session" options={{ headerShown: false, gestureEnabled: false }} />
           <Stack.Screen name="workout/summary" options={{ headerShown: false, gestureEnabled: false }} />

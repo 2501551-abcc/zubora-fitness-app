@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
-import type { DurationOption, WorkoutResult } from '@/types/workout';
+import type { DurationOption, PoseAnalysisResult, WorkoutMenuItem, WorkoutResult } from '@/types/workout';
 import { supabase } from '../supabase';
 
 /** ドラムロールに表示する時間の候補（分）。ずぼら向けに短い刻みも用意。 */
@@ -68,15 +68,6 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   }
 
   try {
-    // 1. ログイン中のユーザー情報を取得
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      console.error('未ログインのためログ保存をスキップしました:', userError?.message);
-      return;
-    }
-
-
     // menu_id は現状 UI に無いため null。AI選択メニューを保存する場合はここに追加。
     // result の各項目（時間・強度・完走可否）を保存したくなったらカラム追加＋ここへ。
     const { error } = await supabase.from('workout_logs').insert({
@@ -105,47 +96,6 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
     console.warn('[workoutService] ウィジェット更新をスキップ:', err);
   }
 }
-  /*上記コードのテストのためコメントアウト
-  try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
-    if (userError || !user) {
-      console.error('未ログインのためログ保存をスキップしました:', userError?.message);
-      return;
-    }
-
-    // 2. 実際の user.id を使って保存
-    const { data, error } = await supabase
-      .from('workout_logs')
-      .insert([
-        {
-          user_id: user.id, // ★ 実際のログインユーザーIDを使用
-          menu_id: 1,
-        }
-      ]);
-
-    if (error) {
-      console.error('Supabaseへの保存に失敗しました:', error.message);
-    } else {
-      console.log('Supabaseへの保存が完全に成功しました！ 🎉');
-    }
-  } catch (err) {
-    console.error('通信エラーなど予期せぬ失敗:', err);
-  }
-
-  // ホーム画面ウィジェットを更新（連続日数・最終実施日時）。iOS 以外は no-op。
-  try {
-    const streakDays = await fetchStreakDays();
-    pushWidgetSnapshot({
-      streakDays,
-      lastWorkoutAt: result.endedAt,
-      reminderHour: DEFAULT_REMINDER_HOUR,
-    });
-  } catch (err) {
-    console.warn('[workoutService] ウィジェット更新をスキップ:', err);
-  }
-}
-*/
 
 /*export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   console.log('[workoutService] saveWorkoutSession (stub):', result);
@@ -160,3 +110,78 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
 export async function fetchStreakDays(): Promise<number> {
   return 5;
 }
+
+/**
+ * 「メニューを選ぶ」画面が表示する、DB(workout_menus)に登録された種目一覧を取得する。
+ * 事前に supabase/migration_03_workout_menus.sql を実行しておく必要がある。
+ */
+export async function fetchWorkoutMenus(): Promise<WorkoutMenuItem[]> {
+  const { data, error } = await supabase
+    .from('workout_menus')
+    .select('id, exercise_key, name, description, analysis_type, target_reps')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true });
+
+  if (error) {
+    console.error('[workoutService] fetchWorkoutMenus failed:', error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    exerciseKey: row.exercise_key,
+    name: row.name,
+    description: row.description,
+    analysisType: row.analysis_type,
+    targetReps: row.target_reps,
+  }));
+}
+
+/**
+ * フォーム判定（スクワットなど）セッションの結果を保存する。
+ * app/workout/pose-analysis.tsx がセッション終了時に呼ぶ。
+ * pose判定も「運動1回」として既存の workout_logs に保存する
+ * （streak集計・RLSなど既存の仕組みをそのまま使うため。saveWorkoutSessionと同じ認証パターン）。
+ */
+export async function savePoseAnalysisResult(result: PoseAnalysisResult): Promise<void> {
+  console.log('[workoutService] savePoseAnalysisResult:', result);
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    console.warn('[workoutService] 未ログインのため保存をスキップしました');
+    return;
+  }
+
+  try {
+    const { error } = await supabase.from('workout_logs').insert({
+      user_id: user.id,
+      menu_id: result.menuId,
+      total_reps: result.totalReps,
+      good_reps: result.goodReps,
+      rep_log: result.repLog,
+    });
+
+    if (error) {
+      console.error('[workoutService] pose結果の保存に失敗:', error.message);
+    } else {
+      console.log('[workoutService] pose結果の保存に成功 🎉');
+    }
+  } catch (err) {
+    console.error('[workoutService] savePoseAnalysisResult 通信エラー:', err);
+  }
+
+  // ホーム画面ウィジェットを更新（saveWorkoutSessionと同様）
+  try {
+    const streakDays = await fetchStreakDays();
+    pushWidgetSnapshot({
+      streakDays,
+      lastWorkoutAt: new Date().toISOString(),
+      reminderHour: DEFAULT_REMINDER_HOUR,
+    });
+  } catch (err) {
+    console.warn('[workoutService] ウィジェット更新をスキップ:', err);
+  }
+}
+

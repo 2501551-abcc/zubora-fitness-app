@@ -49,7 +49,7 @@ export default function HomeScreen() {
 
   const startWorkout = () => {
     tapImpact();
-    router.push('/workout/prepare');
+    router.push('/workout/menu');
   };
 
   return (

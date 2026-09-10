@@ -7,6 +7,9 @@
      （既存の `users` / `friendships` / `workout_logs` への差分適用。再実行しても安全）
    - 既に schema.sql 実行済みなら追加で `supabase/migration_02_avatar_emoji.sql` も Run
      （アバター絵文字を `users` に持たせ、フレンド一覧にも表示。schema.sql 側にも反映済み）
+   - 続けて `supabase/migration_03_workout_menus.sql` も Run
+     （「メニューを選ぶ」画面用の `workout_menus` と、スクワット等のpose判定結果を
+     保存するための `workout_logs` への列追加。cv担当者のフォーム判定機能と対）
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage

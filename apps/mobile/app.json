@@ -15,6 +15,9 @@
         "com.apple.security.application-groups": [
           "group.com.zubora.workout"
         ]
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "スクワットなどのフォーム判定のためにカメラを使用します"
       }
     },
     "android": {
@@ -25,7 +28,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["CAMERA"]
     },
     "web": {
       "output": "static",
@@ -63,7 +67,14 @@
       "expo-font",
       "expo-image",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "スクワットなどのフォーム判定のためにカメラを使用します"
+        }
+      ],
+      "./plugins/withPoseModel.js"
     ],
     "experiments": {
       "typedRoutes": true,

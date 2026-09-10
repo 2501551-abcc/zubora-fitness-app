@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>スクワットフォーム判定 - PCテスト用</title>
+<style>
+  :root {
+    --bg: #0b0b0d;
+    --panel: rgba(20, 20, 24, 0.85);
+    --accent-ok: #4CAF50;
+    --accent-ng: #F44336;
+    --text-dim: #9a9aa2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: #fff;
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+  .stage {
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  video, canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  video { transform: scaleX(-1); }
+  canvas { transform: scaleX(-1); }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    pointer-events: none;
+  }
+  .badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .stats-row { display: flex; gap: 12px; width: 100%; justify-content: center; }
+  .stat-box {
+    background: var(--panel);
+    padding: 10px 22px;
+    border-radius: 12px;
+    text-align: center;
+    min-width: 96px;
+  }
+  .stat-label { color: var(--text-dim); font-size: 11px; }
+  .stat-value { font-size: 24px; font-weight: 700; }
+  .advice-card {
+    background: rgba(255,255,255,0.92);
+    color: #222;
+    padding: 14px 18px;
+    border-radius: 12px;
+    width: 100%;
+    text-align: center;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .panel {
+    width: 100%;
+    max-width: 720px;
+    margin-top: 16px;
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 14px 18px;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .panel b { color: #fff; }
+  button {
+    margin-top: 16px;
+    background: #fff;
+    color: #111;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.4; cursor: default; }
+
+  /* セッション終了サマリー */
+  .summary {
+    display: none;
+    width: 100%;
+    max-width: 720px;
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 24px;
+    margin-top: 8px;
+  }
+  .summary.visible { display: block; }
+  .summary h2 { margin: 0 0 4px; font-size: 22px; }
+  .summary .sub2 { color: var(--text-dim); font-size: 13px; margin-bottom: 16px; }
+  .summary-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .summary-row .rep-num { width: 56px; font-weight: 700; }
+  .summary-row .rep-score { width: 56px; font-weight: 700; }
+  .summary-row .rep-advice { color: #ddd; flex: 1; }
+</style>
+</head>
+<body>
+
+<h1>スクワットフォーム判定 — PCテスト用</h1>
+<div class="sub">向きチェック＋10回達成でセッション終了する版</div>
+
+<div class="stage" id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay-canvas"></canvas>
+  <div class="overlay">
+    <div id="badge" class="badge" style="background:var(--accent-ng);">NOT READY</div>
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-label">回数</div>
+        <div class="stat-value" id="count">0 回</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">スコア</div>
+        <div class="stat-value" id="score">--</div>
+      </div>
+    </div>
+    <div class="advice-card" id="advice">カメラを起動してください</div>
+  </div>
+</div>
+
+<button id="start-btn">カメラを起動</button>
+
+<div class="summary" id="summary">
+  <h2>お疲れさまでした！</h2>
+  <div class="sub2" id="summary-sub"></div>
+  <div id="summary-list"></div>
+</div>
+
+<div class="panel">
+  <b>使い方:</b> 「カメラを起動」→ 権限許可 → 少し離れて全身を映す →
+  「左を向いてください」と出たら、画面に対して<b>右半身を見せる向き</b>に構える →
+  READYになったらスクワット開始。正しいフォームが10回貯まると自動終了し、結果一覧が表示されます。<br/>
+  <b>注意:</b> file://で直接開くとカメラ権限が通らないブラウザがあります。うまく起動しない場合は、
+  このファイルのあるフォルダで <code>python3 -m http.server</code> を実行し、
+  <code>http://localhost:8000/</code> をブラウザで開いてください。
+</div>
+
+<script type="module">
+import {
+  PoseLandmarker,
+  FilesetResolver,
+  DrawingUtils,
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+/* =========================================================
+   1. exerciseConfig.ts の内容をそのままJSに移植したもの
+   ========================================================= */
+const SQUAT_PRAISE_TEXT = "素晴らしいフォームです！";
+
+const SQUAT_CONFIG = {
+  id: "squat",
+  visibilityCheckpoints: [12, 28], // 右肩・右足首（カメラに向いている側）
+  directionCheck: {
+    facingSideIndices: [12, 24, 26, 28],
+    awaySideIndices: [11, 23, 25, 27],
+    minVisibilityMargin: 0.15,
+    instructionText: "左を向いてください",
+  },
+  depthLandmarkIdx: 23,
+  standingYThreshold: 0.4,
+  startDelta: 0.1,
+  riseDelta: 0.03,
+  cooldownMs: 800,
+  joints: [
+    { id: "torso", fromIdx: 23, toIdx: 11, ideal: { x: 0.0, y: -1.0 } },
+    { id: "thigh", fromIdx: 23, toIdx: 25, ideal: { x: 0.707, y: 0.707 } },
+    { id: "shin", fromIdx: 25, toIdx: 27, ideal: { x: 0.0, y: 1.0 } },
+  ],
+  angleCheck: { hipIdx: 23, kneeIdx: 25, ankleIdx: 27 },
+  getAdvice: (kneeAngle, avgSimilarity) => {
+    if (kneeAngle > 100) return "もう少し深めに腰を落としましょう！";
+    if (kneeAngle < 60) return "腰の落としすぎです！膝に注意してください。";
+    if (avgSimilarity < 0.7) return "上半身が前に傾きすぎています。胸を張りましょう。";
+    return SQUAT_PRAISE_TEXT;
+  },
+  praiseText: SQUAT_PRAISE_TEXT,
+  targetGoodReps: 10,
+  completionText: "お疲れさまでした",
+};
+
+/* =========================================================
+   2. PoseFormEvaluator.ts の内容をそのままJSに移植したもの
+   ========================================================= */
+const SMOOTHING_ALPHA = 0.4;
+
+class PoseFormEvaluator {
+  constructor(config) {
+    this.config = config;
+    this.phase = "checking_visibility";
+    this.isMoving = false;
+    this.deepestY = 0.0;
+    this.lastRepAt = 0;
+    this.smoothed = [];
+    this.lastSpokenAt = 0;
+    this.MIN_SPEAK_INTERVAL_MS = 500;
+    this.repLog = [];
+    this.goodRepCount = 0;
+  }
+
+  smoothLandmarks(raw) {
+    if (this.smoothed.length !== raw.length) {
+      this.smoothed = raw.map((l) => ({ ...l }));
+      return this.smoothed;
+    }
+    this.smoothed = raw.map((l, i) => {
+      const prev = this.smoothed[i];
+      return {
+        x: prev.x + SMOOTHING_ALPHA * (l.x - prev.x),
+        y: prev.y + SMOOTHING_ALPHA * (l.y - prev.y),
+        visibility: l.visibility,
+      };
+    });
+    return this.smoothed;
+  }
+
+  cosineSimilarity(v1, v2) {
+    const dot = v1.x * v2.x + v1.y * v2.y;
+    const n1 = Math.hypot(v1.x, v1.y);
+    const n2 = Math.hypot(v2.x, v2.y);
+    if (n1 === 0 || n2 === 0) return 0;
+    return dot / (n1 * n2);
+  }
+
+  calculateAngle(hip, knee, ankle) {
+    const v1 = { x: hip.x - knee.x, y: hip.y - knee.y };
+    const v2 = { x: ankle.x - knee.x, y: ankle.y - knee.y };
+    const sim = Math.max(-1, Math.min(1, this.cosineSimilarity(v1, v2)));
+    return Math.acos(sim) * (180 / Math.PI);
+  }
+
+  avgVisibility(landmarks, indices) {
+    const values = indices.map((i) => landmarks[i]?.visibility ?? 1);
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  }
+
+  speakAdvice(text) {
+    const now = Date.now();
+    if (now - this.lastSpokenAt < this.MIN_SPEAK_INTERVAL_MS) return;
+    this.lastSpokenAt = now;
+
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "ja-JP";
+    utter.rate = 1.0;
+    window.speechSynthesis.speak(utter);
+  }
+
+  processFrame(rawLandmarks, onUpdate) {
+    if (this.phase === "finished") return;
+
+    const {
+      visibilityCheckpoints, directionCheck, depthLandmarkIdx,
+      standingYThreshold, startDelta, riseDelta, cooldownMs,
+      joints, angleCheck, getAdvice, praiseText, targetGoodReps, completionText,
+    } = this.config;
+
+    const wasVisible = this.phase !== "checking_visibility";
+    const enterThreshold = 0.6;
+    const exitThreshold = 0.4;
+    const requiredThreshold = wasVisible ? exitThreshold : enterThreshold;
+
+    const fullBodyVisible = visibilityCheckpoints.every(
+      (idx) => (rawLandmarks[idx]?.visibility ?? 1) > requiredThreshold
+    );
+
+    if (!fullBodyVisible) {
+      if (this.phase !== "checking_visibility") {
+        this.phase = "checking_visibility";
+        this.smoothed = [];
+        onUpdate({ advice: "全身をカメラに映してください", isReady: false });
+      }
+      return;
+    }
+
+    const facingAvg = this.avgVisibility(rawLandmarks, directionCheck.facingSideIndices);
+    const awayAvg = this.avgVisibility(rawLandmarks, directionCheck.awaySideIndices);
+    const correctDirection = facingAvg - awayAvg > directionCheck.minVisibilityMargin;
+
+    if (!correctDirection) {
+      if (this.phase !== "checking_direction") {
+        this.phase = "checking_direction";
+        this.speakAdvice(directionCheck.instructionText);
+        onUpdate({ advice: directionCheck.instructionText, isReady: false });
+      }
+      return;
+    }
+
+    if (this.phase !== "ready") {
+      this.phase = "ready";
+      this.speakAdvice("全身を確認しました。動作を開始してください");
+      onUpdate({ advice: "動作を開始してください", isReady: true });
+    }
+
+    const landmarks = this.smoothLandmarks(rawLandmarks);
+    const depthY = landmarks[depthLandmarkIdx].y;
+
+    const now = Date.now();
+    const inCooldown = now - this.lastRepAt < cooldownMs;
+
+    if (!inCooldown && depthY > standingYThreshold + startDelta) {
+      this.isMoving = true;
+    }
+
+    if (this.isMoving) {
+      if (depthY > this.deepestY) {
+        this.deepestY = depthY;
+      } else if (this.deepestY - depthY > riseDelta) {
+        const similarities = joints.map((j) => {
+          const v = {
+            x: landmarks[j.toIdx].x - landmarks[j.fromIdx].x,
+            y: landmarks[j.toIdx].y - landmarks[j.fromIdx].y,
+          };
+          return this.cosineSimilarity(v, j.ideal);
+        });
+        const avgSimilarity = similarities.reduce((a, b) => a + b, 0) / similarities.length;
+        const score = Math.max(0, Math.floor(avgSimilarity * 100));
+
+        const kneeAngle = this.calculateAngle(
+          landmarks[angleCheck.hipIdx],
+          landmarks[angleCheck.kneeIdx],
+          landmarks[angleCheck.ankleIdx]
+        );
+
+        const advice = getAdvice(kneeAngle, avgSimilarity);
+        const isGoodForm = advice === praiseText;
+
+        this.repLog.push({ repNumber: this.repLog.length + 1, score, advice, isGoodForm });
+        if (isGoodForm) this.goodRepCount += 1;
+
+        this.isMoving = false;
+        this.deepestY = 0.0;
+        this.lastRepAt = now;
+
+        if (this.goodRepCount >= targetGoodReps) {
+          this.phase = "finished";
+          this.speakAdvice(completionText);
+          onUpdate({
+            score,
+            advice: completionText,
+            isReady: true,
+            countIncrement: true,
+            sessionFinished: true,
+            sessionLog: [...this.repLog],
+          });
+          return;
+        }
+
+        this.speakAdvice(advice);
+        onUpdate({ score, advice, isReady: true, countIncrement: true });
+      }
+    }
+  }
+}
+
+/* =========================================================
+   3. カメラ + MediaPipe + Evaluator の接続部分
+   ========================================================= */
+const evaluator = new PoseFormEvaluator(SQUAT_CONFIG);
+
+const videoEl = document.getElementById("video");
+const canvasEl = document.getElementById("overlay-canvas");
+const ctx = canvasEl.getContext("2d");
+const badgeEl = document.getElementById("badge");
+const countEl = document.getElementById("count");
+const scoreEl = document.getElementById("score");
+const adviceEl = document.getElementById("advice");
+const startBtn = document.getElementById("start-btn");
+const stageEl = document.getElementById("stage");
+const summaryEl = document.getElementById("summary");
+const summarySubEl = document.getElementById("summary-sub");
+const summaryListEl = document.getElementById("summary-list");
+
+let count = 0;
+let poseLandmarker = null;
+let running = false;
+let mediaStream = null;
+
+function updateUI(result) {
+  badgeEl.textContent = result.isReady ? "READY" : "NOT READY";
+  badgeEl.style.background = result.isReady ? "var(--accent-ok)" : "var(--accent-ng)";
+  adviceEl.textContent = result.advice;
+  if (result.score !== undefined) scoreEl.textContent = `${result.score}点`;
+  if (result.countIncrement) {
+    count += 1;
+    countEl.textContent = `${count} 回`;
+  }
+  if (result.sessionFinished && result.sessionLog) {
+    finishSession(result.sessionLog);
+  }
+}
+
+function finishSession(log) {
+  running = false;
+  // カメラを完全に停止する
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((track) => track.stop());
+    mediaStream = null;
+  }
+
+  const goodCount = log.filter((r) => r.isGoodForm).length;
+  summarySubEl.textContent = `${log.length}回中 ${goodCount}回、正しいフォームでした`;
+  summaryListEl.innerHTML = "";
+  log.forEach((rep) => {
+    const row = document.createElement("div");
+    row.className = "summary-row";
+    row.innerHTML = `
+      <div class="rep-num">${rep.repNumber}回目</div>
+      <div class="rep-score" style="color:${rep.isGoodForm ? "#4CAF50" : "#F44336"}">${rep.score}点</div>
+      <div class="rep-advice">${rep.advice}</div>
+    `;
+    summaryListEl.appendChild(row);
+  });
+
+  stageEl.style.display = "none";
+  startBtn.style.display = "none";
+  summaryEl.classList.add("visible");
+}
+
+async function setupPoseLandmarker() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numPoses: 1,
+  });
+}
+
+function drawSkeleton(landmarks) {
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  const drawingUtils = new DrawingUtils(ctx);
+  drawingUtils.drawLandmarks(landmarks, { radius: 3 });
+  drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS);
+}
+
+async function loop() {
+  if (!running) return;
+  if (videoEl.readyState >= 2) {
+    const result = poseLandmarker.detectForVideo(videoEl, performance.now());
+    if (result.landmarks && result.landmarks.length > 0) {
+      const landmarks = result.landmarks[0];
+      drawSkeleton(landmarks);
+      evaluator.processFrame(landmarks, updateUI);
+    } else {
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    }
+  }
+  if (running) requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener("click", async () => {
+  startBtn.disabled = true;
+  startBtn.textContent = "起動中...";
+
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 960, height: 720 },
+    });
+    videoEl.srcObject = mediaStream;
+    await new Promise((res) => (videoEl.onloadedmetadata = res));
+
+    canvasEl.width = videoEl.videoWidth;
+    canvasEl.height = videoEl.videoHeight;
+
+    if (!poseLandmarker) await setupPoseLandmarker();
+
+    running = true;
+    startBtn.style.display = "none";
+    adviceEl.textContent = "全身を画面に入れてください";
+    loop();
+  } catch (err) {
+    console.error(err);
+    adviceEl.textContent = "カメラの起動に失敗しました: " + err.message;
+    startBtn.disabled = false;
+    startBtn.textContent = "カメラを起動";
+  }
+});
+</script>
+
+</body>
+</html>

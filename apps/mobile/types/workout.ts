@@ -51,3 +51,35 @@ export const LEVEL_LABELS: Record<WorkoutLevel, string> = {
   normal: 'ふつう',
   hard: 'がっつり',
 };
+
+/**
+ * DB（workout_menus）に登録された「メニュー」1件分。
+ * ホームの「筋トレを始める」から遷移するメニュー選択画面がこれを一覧表示する。
+ */
+export interface WorkoutMenuItem {
+  id: number;
+  /** cv/pose/exerciseConfig.ts の EXERCISE_CONFIGS キーと対応（pose系のみ使用） */
+  exerciseKey: string;
+  name: string;
+  description: string | null;
+  /** 'pose': カメラでフォーム判定 / 'timer': 既存の時間タイマー式 */
+  analysisType: 'timer' | 'pose';
+  targetReps: number | null;
+}
+
+/** フォーム判定1回分のログ（PoseFormEvaluator.RepLog と同じ形） */
+export interface PoseRepLog {
+  repNumber: number;
+  score: number;
+  advice: string;
+  isGoodForm: boolean;
+}
+
+/** フォーム判定セッション1回分の結果。完了時に savePoseAnalysisResult() へ渡す。 */
+export interface PoseAnalysisResult {
+  menuId: number;
+  totalReps: number;
+  goodReps: number;
+  repLog: PoseRepLog[];
+}
+
