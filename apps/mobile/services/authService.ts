@@ -16,6 +16,22 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { supabase } from '@/supabase';
 import type { AppUser, TimeString } from '@/types/db';
 
+/**
+ * 端末の電波状況などで fetch が固まったままにならないよう、認証系の通信に上限時間を設ける。
+ * （固まると画面のローディングが戻らず「ボタンが効かない」ように見えるため）
+ */
+function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('通信がタイムアウトしました。電波・Wi-Fi を確認してもう一度お試しください。')),
+        ms,
+      ),
+    ),
+  ]);
+}
+
 /* ---------------- サインアップ ---------------- */
 
 export type SignUpParams = {
@@ -32,16 +48,18 @@ export type SignUpParams = {
  * メール確認が有効な場合 `needsEmailConfirm = true`（確認リンクで確定）。
  */
 export async function signUp(params: SignUpParams): Promise<{ needsEmailConfirm: boolean }> {
-  const { data, error } = await supabase.auth.signUp({
-    email: params.email.trim(),
-    password: params.password,
-    options: {
-      data: {
-        name: params.name.trim(),
-        preferred_time_of_day: params.preferredTimeOfDay ?? '20:00',
+  const { data, error } = await withTimeout(
+    supabase.auth.signUp({
+      email: params.email.trim(),
+      password: params.password,
+      options: {
+        data: {
+          name: params.name.trim(),
+          preferred_time_of_day: params.preferredTimeOfDay ?? '20:00',
+        },
       },
-    },
-  });
+    }),
+  );
   if (error) throw error;
   return { needsEmailConfirm: !!data.user && !data.session };
 }
@@ -49,10 +67,12 @@ export async function signUp(params: SignUpParams): Promise<{ needsEmailConfirm:
 /* ---------------- ログイン ---------------- */
 
 export async function signIn(email: string, password: string): Promise<Session> {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
-    password,
-  });
+  const { data, error } = await withTimeout(
+    supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    }),
+  );
   if (error) throw error;
   return data.session;
 }
