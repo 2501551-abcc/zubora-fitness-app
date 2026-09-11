@@ -8,10 +8,15 @@
  *   - キー(EXPO_PUBLIC_GEMINI_API_KEY)が無いときはモックのツリーを返す（開発用）
  *   - 生成失敗は throw（generating.tsx がリトライ UI を出す）
  *
- * fetchCurrentRoadmap() … 保存済みロードマップの取得
- *   - TODO(persist): goal_trees/milestones/tasks テーブル実装後に Supabase 取得へ（別PR）
+ * saveRoadmap() / fetchCurrentRoadmap() … 「この目標ではじめる」で確定したロードマップの保存/取得
+ *   - TODO(persist): goal_trees/milestones/tasks テーブル実装後、この2関数の中身だけ
+ *     Supabase RPC（save_roadmap / get_current_roadmap, docs/goal-roadmap-persistence-spec.md）
+ *     に差し替える。シグネチャは変えない。
+ *   - 現状は端末内 AsyncStorage に保存（複数端末間では共有されない暫定実装）
  * =====================================================================
  */
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { buildRoadmapPrompt } from '@/lib/goal-prompt';
 import { callGeminiForRoadmap } from '@/lib/gemini-roadmap';
@@ -19,6 +24,7 @@ import { normalizeRoadmap } from '@/lib/normalize-roadmap';
 import type { Roadmap, RoadmapInput } from '@/types/goal';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY?.trim() ?? '';
+const ROADMAP_STORAGE_KEY = 'zubora:goal:current-roadmap';
 
 /**
  * 前提入力から目標ツリーを生成する。
@@ -49,16 +55,26 @@ export async function generateRoadmap(input: RoadmapInput): Promise<Roadmap> {
 }
 
 /**
+ * 「この目標ではじめる」で確定したロードマップを保存する。
+ * TODO(persist): Supabase 実装後は supabase.rpc('save_roadmap', { p_roadmap: roadmap }) に差し替え。
+ */
+export async function saveRoadmap(roadmap: Roadmap): Promise<void> {
+  await AsyncStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(roadmap));
+}
+
+/**
  * 保存済みのロードマップを取得する（目標画面の初期表示用）。
- * TODO(persist): Supabase から現在のツリーを取得。未作成なら null。
- * 現状はデモ用のモックを返す。
+ * 未保存なら null（"まだ目標がありません" 表示になる）。
+ * TODO(persist): Supabase 実装後は supabase.rpc('get_current_roadmap') に差し替え。
  */
 export async function fetchCurrentRoadmap(): Promise<Roadmap | null> {
-  await delay(300);
-  return buildMockRoadmap({
-    goal_text: '3ヶ月で腹筋を割りたい',
-    target_period_weeks: 12,
-  } as RoadmapInput);
+  try {
+    const raw = await AsyncStorage.getItem(ROADMAP_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Roadmap) : null;
+  } catch (err) {
+    console.warn('[goalService] 保存済みロードマップの読み込みに失敗しました:', err);
+    return null;
+  }
 }
 
 /* ---------- 以下はスタブ用のダミー生成（バックエンド実装時は不要） ---------- */
