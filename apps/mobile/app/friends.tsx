@@ -19,7 +19,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -178,6 +180,7 @@ function FriendsDashboard() {
   };
 
   const handleRemove = (friend: Friend) => {
+    if (friend.is_self) return;
     Alert.alert('フレンドを解除', `${friend.username} さんを解除しますか？`, [
       { text: 'キャンセル', style: 'cancel' },
       {
@@ -201,7 +204,8 @@ function FriendsDashboard() {
     () => [...friends].sort((a, b) => b.streak_days - a.streak_days),
     [friends],
   );
-  const onlineCount = ranked.filter((f) => online[f.user_id]).length;
+  const friendsOnly = ranked.filter((f) => !f.is_self);
+  const onlineCount = friendsOnly.filter((f) => online[f.user_id]).length;
 
   if (loading) {
     return (
@@ -240,7 +244,7 @@ function FriendsDashboard() {
         }>
         <Text style={styles.summaryLine}>
           {MonoGlyph.sparkle} いま {onlineCount} 人がオンライン・
-          {ranked.length} 人と励まし合い中
+          {friendsOnly.length} 人と励まし合い中
         </Text>
 
         {/* 届いているフレンド申請 */}
@@ -268,7 +272,7 @@ function FriendsDashboard() {
         <View style={styles.section}>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionLabel}>継続ランキング</Text>
-            {ranked.length > 0 && (
+            {friendsOnly.length > 0 && (
               <Text style={styles.sectionHint}>長押しで解除</Text>
             )}
           </View>
@@ -315,12 +319,12 @@ function FriendCard({
   const stars = Math.min(5, Math.floor(friend.streak_days / STAR_PER_DAYS));
   const goal = Math.max(friend.best_streak_days, STAR_PER_DAYS);
   const progress = Math.min(1, friend.streak_days / goal);
-  const status = friendStatus(friend);
+  const status = friendStatus(friend, friend.is_self);
 
   return (
     <Pressable
       style={[styles.friendCard, rank === 1 && styles.friendCardTop]}
-      onLongPress={onRemove}
+      onLongPress={friend.is_self ? undefined : onRemove}
       delayLongPress={350}>
       {/* ランク */}
       <View style={[styles.rankBadge, rank === 1 && styles.rankBadgeTop]}>
@@ -344,7 +348,11 @@ function FriendCard({
           <Text style={styles.friendName} numberOfLines={1}>
             {friend.username}
           </Text>
-          {isOnline ? (
+          {friend.is_self ? (
+            <View style={styles.selfBadge}>
+              <Text style={styles.selfBadgeText}>あなた</Text>
+            </View>
+          ) : isOnline ? (
             <View style={styles.onlineBadge}>
               <View style={styles.onlineDot} />
               <Text style={styles.onlineText}>Online</Text>
@@ -380,7 +388,10 @@ function FriendCard({
 
 type FriendVibe = 'streak' | 'rest' | 'nudge' | 'fresh';
 
-function friendStatus(f: Friend): {
+function friendStatus(
+  f: Friend,
+  isSelf: boolean,
+): {
   headline: React.ReactNode;
   caption: string;
   vibe: FriendVibe;
@@ -394,12 +405,12 @@ function friendStatus(f: Friend): {
     let caption: string;
     if (s >= f.best_streak_days) caption = '自己ベスト更新中！🎉';
     else if (gap <= 3) caption = `自己ベストまで あと ${gap}日`;
-    else if (s === 1) caption = 'スタート！ここから積み上げ ✨';
-    else if (s <= 3) caption = 'いい調子。3日の壁を越えよう';
-    else if (s <= 6) caption = 'のってきた🔥 1週間までもう少し';
+    else if (s === 1) caption = '継続1日目 ✨';
+    else if (s <= 3) caption = 'いい調子！3日の壁を越えよう';
+    else if (s <= 6) caption = '1週間までもう少し 💪';
     else if (s <= 13) caption = '習慣化ゾーン。えらい！';
     else if (s <= 29) caption = 'すごい継続力 ⭐️';
-    else caption = '殿堂入りペース 👑';
+    else caption = '殿堂入り 👑';
     return {
       headline: (
         <>
@@ -416,7 +427,7 @@ function friendStatus(f: Friend): {
   if (rest == null) {
     return {
       headline: <Text style={styles.restText}>まだ記録がないみたい</Text>,
-      caption: 'いっしょに始めよ 🌱',
+      caption: isSelf ? 'はじめてみよう 🌱' : 'いっしょに始めよ 🌱',
       vibe: 'fresh',
     };
   }
@@ -427,21 +438,21 @@ function friendStatus(f: Friend): {
   let vibe: FriendVibe = 'rest';
   if (rest <= 0) {
     head = '今日は動いた！えらい ✨';
-    caption = 'この調子で連続にしていこ';
+    caption = 'この調子で継続してこ';
   } else if (rest <= 3) {
     head = `サボり${rest}日目`;
     caption = rest === 1 ? 'まだ取り戻せる！' : 'そろそろ戻ろっか 🌱';
   } else if (rest <= 6) {
     head = `サボり${rest}日目`;
-    caption = '誘ってみよう！ 📣';
+    caption = isSelf ? '今日動いてみる？ 📣' : '誘ってみよう！ 📣';
     vibe = 'nudge';
   } else if (rest <= 13) {
     head = '1週間お休み中 🍵';
-    caption = 'ひさしぶりに声かけてみる？';
+    caption = isSelf ? 'ひさしぶりに動いてみない？' : 'ひさしぶりに声かけてみる？';
     vibe = 'nudge';
   } else if (rest <= 29) {
     head = `${rest}日ぶり…`;
-    caption = 'また一緒にやれたらいいね';
+    caption = isSelf ? 'また始めよう、いつでも' : 'また一緒にやれたらいいね';
   } else {
     head = 'しばらくお休み中';
     caption = 'いつでも戻ってこれるよ';
@@ -636,8 +647,12 @@ function AddFriendModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : undefined}>
+        <Pressable style={styles.backdrop} onPress={close}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>フレンドを追加 {MonoGlyph.ribbon}</Text>
           <Text style={styles.sheetSub}>相手のフレンドコードを入力して申請します</Text>
@@ -692,8 +707,9 @@ function AddFriendModal({
           <Pressable onPress={close} hitSlop={8} style={styles.cancelLink}>
             <Text style={styles.cancelLinkText}>閉じる</Text>
           </Pressable>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -894,6 +910,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   lastActive: { fontSize: 11, color: MonoColors.textMuted },
+  selfBadge: {
+    backgroundColor: MonoColors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: MonoColors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: MonoLayout.radiusPill,
+    flex: 0,
+  },
+  selfBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: MonoColors.inkSoft,
+    letterSpacing: 0.5,
+  },
 
   streakLine: { marginTop: 2 },
   streakNum: { fontSize: 15, fontWeight: '800', color: MonoColors.ink },

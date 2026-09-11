@@ -47,6 +47,8 @@ export type FriendWithStatus = {
   rest_days: number | null;
   best_streak_days: number;
   friends_since: string;
+  /** true なら呼び出し本人の行（フレンドではなく自分自身） */
+  is_self: boolean;
 };
 
 /** RPC: get_incoming_friend_requests() の1行 */

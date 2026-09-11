@@ -9,6 +9,7 @@
      - `supabase/migration_02_avatar_emoji.sql`（アバター絵文字を `users` に持たせフレンド一覧にも表示）
      - `supabase/migration_03_home_stats.sql`（`workout_logs.duration_sec` 追加＋ホーム画面の実績 RPC `get_home_stats`）
      - `supabase/migration_04_friend_code.sql`（表示名の一意制約を撤廃＋`users.friend_code` 導入。フレンド申請はコードのみ）
+     - `supabase/migration_05_friends_include_self.sql`（`get_friends_with_status` に自分自身の行も含める）
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage

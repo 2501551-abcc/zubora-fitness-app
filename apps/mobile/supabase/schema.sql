@@ -399,7 +399,7 @@ begin
 end;
 $$;
 
--- 6-3. フレンド一覧 + 継続 / お休み状況（継続日数の多い順）
+-- 6-3. フレンド一覧 + 継続 / お休み状況（継続日数の多い順。自分自身の行も含む）
 drop function if exists public.get_friends_with_status();
 create function public.get_friends_with_status()
 returns table (
@@ -412,7 +412,8 @@ returns table (
   streak_days      int,
   rest_days        int,
   best_streak_days int,
-  friends_since    timestamptz
+  friends_since    timestamptz,
+  is_self          boolean
 )
 language sql
 stable
@@ -426,16 +427,23 @@ as $$
     from public.friendships
     where status = 'accepted'
       and (user_id_a = auth.uid() or user_id_b = auth.uid())
+  ),
+  ids as (
+    select friend_id, friends_since, false as is_self from my_friends
+    union all
+    select auth.uid(), now(), true
+    where auth.uid() is not null
   )
   select
     u.id, u.name, u.avatar_url, u.avatar_emoji, u.is_online, u.last_seen,
     coalesce(s.streak_days, 0)::int,
     s.rest_days::int,
     coalesce(s.best_streak_days, 0)::int,
-    mf.friends_since
-  from my_friends mf
-  join public.users u on u.id = mf.friend_id
-  left join public.user_workout_stats s on s.user_id = mf.friend_id
+    i.friends_since,
+    i.is_self
+  from ids i
+  join public.users u on u.id = i.friend_id
+  left join public.user_workout_stats s on s.user_id = i.friend_id
   order by coalesce(s.streak_days, 0) desc, u.name asc;
 $$;
 

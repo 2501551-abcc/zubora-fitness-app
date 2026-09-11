@@ -20,6 +20,8 @@ export type Friend = {
   last_active_at: string;
   /** 自己ベストの連続日数（プログレスバーの目盛りに使用） */
   best_streak_days: number;
+  /** true なら自分自身の行（ランキングに自分も表示するため） */
+  is_self: boolean;
 };
 
 /** 届いているフレンド申請 */

@@ -335,6 +335,7 @@ export async function fetchFriends(): Promise<Friend[]> {
     rest_days: r.rest_days, // null = まだ記録なし
     last_active_at: r.last_seen,
     best_streak_days: Math.max(r.best_streak_days, r.streak_days, 7),
+    is_self: r.is_self,
   }));
 }
 
