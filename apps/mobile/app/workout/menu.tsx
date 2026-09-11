@@ -32,21 +32,20 @@ export default function WorkoutMenuScreen() {
   }, []);
 
   const selectMenu = (item: WorkoutMenuItem) => {
-    tapImpact();
-    if (item.analysisType === 'pose') {
-      router.push({
-        pathname: '/workout/pose-analysis',
-        params: {
-          menuId: String(item.id),
-          exerciseKey: item.exerciseKey,
-          name: item.name,
-          targetReps: String(item.targetReps ?? 10),
-        },
-      });
-    } else {
-      router.push('/workout/prepare');
-    }
-  };
+  tapImpact();
+  
+  // どんなメニューであっても、まずはタイマー（準備）画面へ遷移する
+  router.push({
+    pathname: '/workout/prepare', // またはタイマー画面のパス
+    params: {
+      menuId: String(item.id),
+      exerciseKey: item.exerciseKey,
+      name: item.name,
+      analysisType: item.analysisType, // poseかtimerかを次の画面に伝える
+      targetReps: String(item.targetReps ?? 10),
+    },
+  });
+};
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
