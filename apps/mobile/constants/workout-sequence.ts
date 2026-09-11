@@ -47,9 +47,17 @@ const LEVEL_CONFIG: Record<WorkoutLevel, LevelConfig> = {
 };
 
 /**
+ * 新しいセグメントを開始する価値があるとみなす最低ライン（本来の長さに対する割合）。
+ * これを下回る中途半端な種目/休憩は追加せず、直前のセグメントを延長して埋める。
+ */
+const MIN_SEGMENT_FRACTION = 0.4;
+
+/**
  * 選んだ合計時間(plannedSec)とレベルから、種目 → 休憩 → 種目 … のセグメント列を
- * 組み立てる。最後のセグメントは合計が plannedSec ぴったりになるよう切り詰める。
- * 種目は1つだけでも成立するように、休憩なしの短いセッション（1分未満相当）にも対応。
+ * 組み立てる。最後に半端な時間（本来の長さの40%未満）しか残らない場合は、
+ * その種目/休憩を追加せず直前のセグメントを plannedSec まで延長する
+ * （例: 1分選択時に「スクワット40秒 + 休憩15秒」のあと5秒だけ次の種目、
+ * という中途半端な状態を避け、休憩を20秒に延ばして丁度埋める）。
  */
 export function buildWorkoutSequence(plannedSec: number, level: WorkoutLevel): WorkoutSegment[] {
   const { exercises, workSec, restSec } = LEVEL_CONFIG[level];
@@ -59,8 +67,27 @@ export function buildWorkoutSequence(plannedSec: number, level: WorkoutLevel): W
 
   while (elapsed < plannedSec) {
     const isRest = segments.length % 2 === 1; // 種目 → 休憩 → 種目 … の交互
-    const name = isRest ? '休憩' : exercises[exerciseIndex % exercises.length];
     const duration = isRest ? restSec : workSec;
+    const remaining = plannedSec - elapsed;
+
+    if (remaining < duration * MIN_SEGMENT_FRACTION) {
+      if (segments.length === 0) {
+        // そもそも1つもセグメントが無い（plannedSec 自体が極端に短い）場合は、
+        // 延長する相手が無いので種目だけの短いセグメントを作る。
+        segments.push({
+          type: 'exercise',
+          name: exercises[0],
+          startSec: elapsed,
+          endSec: plannedSec,
+        });
+      } else {
+        // 直前のセグメント（休憩 or 種目）を延長して、半端な追加をしない。
+        segments[segments.length - 1].endSec = plannedSec;
+      }
+      break;
+    }
+
+    const name = isRest ? '休憩' : exercises[exerciseIndex % exercises.length];
     const endSec = Math.min(plannedSec, elapsed + duration);
 
     segments.push({ type: isRest ? 'rest' : 'exercise', name, startSec: elapsed, endSec });
