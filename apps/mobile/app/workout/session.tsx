@@ -3,6 +3,8 @@
  * -------------------------------------------------------------
  *  - 準備画面で決めた時間を受け取り、残り時間を大きく表示。
  *  - 決めた分数ぶんだけ「減っていくバー」で進捗を可視化。
+ *  - レベルに応じたローテーションで「今の種目」を表示し、種目のあいだに
+ *    休憩を自動で挟む（constants/workout-sequence.ts）。
  *  - 一時停止 / 再開ができる。
  *  - 完了で結果を services.saveWorkoutSession() に渡し、サマリー画面へ。
  *  - 中断はホームへ戻る。
@@ -12,12 +14,13 @@
 
 import { DepletingBar } from '@/components/workout/depleting-bar';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
+import { buildWorkoutSequence, findSegmentAt } from '@/constants/workout-sequence';
 import { formatTime } from '@/lib/format-time';
 import { notifySuccess, tapLight } from '@/lib/haptics';
 import { saveWorkoutSession } from '@/services/workoutService';
 import { LEVEL_LABELS, type WorkoutLevel, type WorkoutResult } from '@/types/workout';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../supabase';
@@ -35,9 +38,24 @@ export default function WorkoutSessionScreen() {
   const [remainingSec, setRemainingSec] = useState(plannedSec);
   const [isRunning, setIsRunning] = useState(true);
 
+  // レベル×合計時間から一度だけ組み立てる（種目 → 休憩 → 種目 …）
+  const segments = useMemo(() => buildWorkoutSequence(plannedSec, level), [plannedSec, level]);
+  const elapsedSec = plannedSec - remainingSec;
+  const currentSegment = findSegmentAt(segments, elapsedSec);
+  const segmentRemainingSec = Math.max(0, currentSegment.endSec - elapsedSec);
+
   const startedAtRef = useRef(new Date().toISOString());
   const endTimeRef = useRef<number>(Date.now() + plannedSec * 1000); // 終了予定時刻(ms)
   const savedRef = useRef(false);
+  const lastSegmentStartRef = useRef(currentSegment.startSec);
+
+  // 種目 ⇔ 休憩の切り替わりを軽い振動で知らせる（画面を見ていなくても気づけるように）
+  useEffect(() => {
+    if (currentSegment.startSec !== lastSegmentStartRef.current) {
+      lastSegmentStartRef.current = currentSegment.startSec;
+      tapLight();
+    }
+  }, [currentSegment.startSec]);
 
   // 結果を確定してサービス層へ（保存はバックエンドが実装）
   const finish = useCallback(
@@ -118,11 +136,22 @@ export default function WorkoutSessionScreen() {
         </Pressable>
       </View>
 
-      {/* 残り時間 */}
+      {/* 今の種目 / 休憩 + そのセグメントの残り時間 */}
       <View style={styles.center}>
-        <Text style={styles.subLabel}>残り時間</Text>
-        <Text style={styles.time}>{formatTime(remainingSec)}</Text>
-        <Text style={styles.planned}>目標 {Math.round(plannedSec / 60)}分</Text>
+        <View
+          style={[
+            styles.segmentTag,
+            currentSegment.type === 'rest' && styles.segmentTagRest,
+          ]}>
+          <Text style={styles.segmentTagText}>
+            {currentSegment.type === 'rest' ? '休憩中' : 'いまの種目'}
+          </Text>
+        </View>
+        <Text style={styles.exerciseName}>{currentSegment.name}</Text>
+        <Text style={styles.time}>{formatTime(segmentRemainingSec)}</Text>
+        <Text style={styles.planned}>
+          全体の残り {formatTime(remainingSec)}（目標 {Math.round(plannedSec / 60)}分）
+        </Text>
       </View>
 
       {/* 減っていくバー */}
@@ -192,10 +221,27 @@ const styles = StyleSheet.create({
   center: {
     alignItems: 'center',
   },
-  subLabel: {
-    color: WorkoutColors.soft,
-    fontSize: 15,
+  segmentTag: {
+    backgroundColor: WorkoutColors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 999,
     marginBottom: 10,
+  },
+  segmentTagRest: {
+    backgroundColor: WorkoutColors.ink,
+  },
+  segmentTagText: {
+    color: WorkoutColors.onAccent,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  exerciseName: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   time: {
     color: '#FFFFFF',
