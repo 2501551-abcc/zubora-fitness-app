@@ -1,45 +1,80 @@
 /**
- * 目標ロードマップのデータ層（バックエンド接合部）
+ * 目標ロードマップのデータ層
  * =====================================================================
- * ★バックエンド担当へ★
- * UI はこのファイルの関数シグネチャだけに依存しています。
- * 現状はスタブ（モックのツリーを返す）ので、フロント単体で通しで動きます。
+ * UI（app/goal/*）はこのファイルの関数シグネチャだけに依存しています。
  *
- * generateRoadmap() の中身を Gemini 呼び出しに差し替えれば結合完了です。
- *   - 設計ドラフト セクション5 のシステムプロンプトを使用。
- *   - ★重要★ Gemini API は response_mime_type だけでなく、必ず
- *     response_schema（types/goal.ts の Roadmap 構造）を明示的に渡すこと。
- *     指定しないと JSON が壊れるケースが実検証で確認されています。
- *   - 採用モデル：gemini-3.5-flash（レイテンシ約30秒。UI側は生成中画面で吸収）。
+ * generateRoadmap()  … 前提10問 + 大目標 → Gemini で目標ツリーを一括生成
+ *   - 設計: docs/goal-roadmap-design.md
+ *   - キー(EXPO_PUBLIC_GEMINI_API_KEY)が無いときはモックのツリーを返す（開発用）
+ *   - 生成失敗は throw（generating.tsx がリトライ UI を出す）
+ *
+ * saveRoadmap() / fetchCurrentRoadmap() … 「この目標ではじめる」で確定したロードマップの保存/取得
+ *   - TODO(persist): goal_trees/milestones/tasks テーブル実装後、この2関数の中身だけ
+ *     Supabase RPC（save_roadmap / get_current_roadmap, docs/goal-roadmap-persistence-spec.md）
+ *     に差し替える。シグネチャは変えない。
+ *   - 現状は端末内 AsyncStorage に保存（複数端末間では共有されない暫定実装）
  * =====================================================================
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { buildRoadmapPrompt } from '@/lib/goal-prompt';
+import { callGeminiForRoadmap } from '@/lib/gemini-roadmap';
+import { normalizeRoadmap } from '@/lib/normalize-roadmap';
 import type { Roadmap, RoadmapInput } from '@/types/goal';
+
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY?.trim() ?? '';
+const ROADMAP_STORAGE_KEY = 'zubora:goal:current-roadmap';
 
 /**
  * 前提入力から目標ツリーを生成する。
- * TODO(backend): ここを Gemini API 呼び出しに差し替える。
- *   1. 設計ドラフト セクション5 のシステムプロンプトに入力を差し込む
- *   2. response_schema に Roadmap 構造を渡して構造化出力を強制
- *   3. 返ってきた JSON をそのまま Roadmap として返す
- * 現状は入力に応じてそれっぽいモックを返す（約1.2秒の疑似待ち付き）。
+ * キーが設定されていれば Gemini、なければモック。
  */
 export async function generateRoadmap(input: RoadmapInput): Promise<Roadmap> {
-  await delay(1200); // 生成中画面の確認用のダミー待ち（本番は約30秒）
-  return buildMockRoadmap(input);
+  if (!GEMINI_API_KEY) {
+    console.warn('[goalService] EXPO_PUBLIC_GEMINI_API_KEY 未設定。モックのロードマップを返します。');
+    await delay(1200);
+    return buildMockRoadmap(input);
+  }
+
+  const prompt = buildRoadmapPrompt(input);
+  // スキーマ不一致・JSON 破損は 1 回だけ自動リトライ（設計 §7）
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const raw = await callGeminiForRoadmap(prompt, GEMINI_API_KEY);
+      return normalizeRoadmap(raw, input);
+    } catch (e) {
+      lastErr = e;
+      const kind = (e as { kind?: string })?.kind;
+      // ネットワーク/HTTP/ブロックは即 throw（リトライしても無駄 or 課金増）
+      if (kind === 'network' || kind === 'http' || kind === 'blocked') break;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('ロードマップ生成に失敗しました');
+}
+
+/**
+ * 「この目標ではじめる」で確定したロードマップを保存する。
+ * TODO(persist): Supabase 実装後は supabase.rpc('save_roadmap', { p_roadmap: roadmap }) に差し替え。
+ */
+export async function saveRoadmap(roadmap: Roadmap): Promise<void> {
+  await AsyncStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(roadmap));
 }
 
 /**
  * 保存済みのロードマップを取得する（目標画面の初期表示用）。
- * TODO(backend): Supabase 等から現在のツリーを取得。未作成なら null。
- * 現状はデモ用のモックを返す。
+ * 未保存なら null（"まだ目標がありません" 表示になる）。
+ * TODO(persist): Supabase 実装後は supabase.rpc('get_current_roadmap') に差し替え。
  */
 export async function fetchCurrentRoadmap(): Promise<Roadmap | null> {
-  await delay(300);
-  return buildMockRoadmap({
-    goal_text: '3ヶ月で腹筋を割りたい',
-    target_period_weeks: 12,
-  } as RoadmapInput);
+  try {
+    const raw = await AsyncStorage.getItem(ROADMAP_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Roadmap) : null;
+  } catch (err) {
+    console.warn('[goalService] 保存済みロードマップの読み込みに失敗しました:', err);
+    return null;
+  }
 }
 
 /* ---------- 以下はスタブ用のダミー生成（バックエンド実装時は不要） ---------- */
