@@ -76,6 +76,21 @@ export interface Roadmap {
   milestones: RoadmapMilestone[];
 }
 
+/* ========== ホーム画面用: 今週のフォーカス ========== */
+
+/** ホーム画面に出す「今週の目標」。ロードマップ未保存なら null。 */
+export interface WeekFocus {
+  roadmapTitle: string;
+  currentWeek: number;
+  targetPeriodWeeks: number;
+  /** 予定週数を超えた＝プラン達成 */
+  isComplete: boolean;
+  milestoneTitle: string | null;
+  taskTitle: string | null;
+  taskDescription: string | null;
+  frequencyPerWeek: number | null;
+}
+
 /* ========== 質問フローの回答（画面内の作業用ステート） ========== */
 
 /**

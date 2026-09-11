@@ -14,6 +14,9 @@
  *     端末をまたいでも同じロードマップが見える。
  *   - 未ログインだと RPC が AUTH_REQUIRED を投げる（saveRoadmap は throw、
  *     fetchCurrentRoadmap は catch して null＝「まだ目標なし」表示にする）。
+ *
+ * fetchThisWeekFocus() … ホーム画面用。保存済みロードマップの「今週やるタスク」を1件返す
+ *   - RPC: get_this_week_focus（現在週 = goal_trees.created_at からの経過週）
  * =====================================================================
  */
 
@@ -21,7 +24,7 @@ import { buildRoadmapPrompt } from '@/lib/goal-prompt';
 import { callGeminiForRoadmap } from '@/lib/gemini-roadmap';
 import { normalizeRoadmap } from '@/lib/normalize-roadmap';
 import { supabase } from '@/supabase';
-import type { Roadmap, RoadmapInput } from '@/types/goal';
+import type { Roadmap, RoadmapInput, WeekFocus } from '@/types/goal';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY?.trim() ?? '';
 
@@ -74,6 +77,41 @@ export async function fetchCurrentRoadmap(): Promise<Roadmap | null> {
     return (data as Roadmap | null) ?? null;
   } catch (err) {
     console.warn('[goalService] 保存済みロードマップの取得に失敗しました:', err);
+    return null;
+  }
+}
+
+/**
+ * ホーム画面用「今週の目標」を取得する。
+ * ロードマップ未保存 / 未ログイン / 取得失敗なら null（ホーム側は非表示にする）。
+ */
+export async function fetchThisWeekFocus(): Promise<WeekFocus | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_this_week_focus');
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as {
+      roadmap_title: string;
+      current_week: number;
+      target_period_weeks: number;
+      is_complete: boolean;
+      milestone_title: string | null;
+      task_title: string | null;
+      task_description: string | null;
+      frequency_per_week: number | null;
+    };
+    return {
+      roadmapTitle: row.roadmap_title,
+      currentWeek: row.current_week,
+      targetPeriodWeeks: row.target_period_weeks,
+      isComplete: row.is_complete,
+      milestoneTitle: row.milestone_title,
+      taskTitle: row.task_title,
+      taskDescription: row.task_description,
+      frequencyPerWeek: row.frequency_per_week,
+    };
+  } catch (err) {
+    console.warn('[goalService] 今週の目標の取得に失敗しました:', err);
     return null;
   }
 }

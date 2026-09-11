@@ -738,7 +738,54 @@ as $$
   ) g;
 $$;
 
-revoke all on function public.save_roadmap(jsonb)   from public, anon;
-revoke all on function public.get_current_roadmap() from public, anon;
-grant execute on function public.save_roadmap(jsonb)   to authenticated;
-grant execute on function public.get_current_roadmap() to authenticated;
+-- ホーム画面用「今週の目標」。「今週」= created_at からの経過週（JST暦日）。
+create or replace function public.get_this_week_focus()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with active as (
+    select * from public.goal_trees
+    where user_id = auth.uid() and is_active
+    order by created_at desc
+    limit 1
+  ),
+  week_calc as (
+    select
+      a.*,
+      greatest(1, (
+        ((now() at time zone 'Asia/Tokyo')::date - (a.created_at at time zone 'Asia/Tokyo')::date) / 7
+      ) + 1) as current_week
+    from active a
+  ),
+  chosen as (
+    select t.title, t.description, t.frequency_per_week, m.title as milestone_title
+    from week_calc w
+    join public.goal_milestones m on m.goal_id = w.id
+    join public.goal_tasks t on t.milestone_id = m.id
+    where t.week_number <= w.current_week
+    order by t.week_number desc
+    limit 1
+  )
+  select case when w.id is null then null else jsonb_build_object(
+    'roadmap_title', w.title,
+    'current_week', w.current_week,
+    'target_period_weeks', w.target_period_weeks,
+    'is_complete', w.current_week > w.target_period_weeks,
+    'milestone_title', c.milestone_title,
+    'task_title', c.title,
+    'task_description', c.description,
+    'frequency_per_week', c.frequency_per_week
+  ) end
+  from week_calc w
+  left join chosen c on true;
+$$;
+
+revoke all on function public.save_roadmap(jsonb)      from public, anon;
+revoke all on function public.get_current_roadmap()    from public, anon;
+revoke all on function public.get_this_week_focus()    from public, anon;
+grant execute on function public.save_roadmap(jsonb)      to authenticated;
+grant execute on function public.get_current_roadmap()    to authenticated;
+grant execute on function public.get_this_week_focus()    to authenticated;

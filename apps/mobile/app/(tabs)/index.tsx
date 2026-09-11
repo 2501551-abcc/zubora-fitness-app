@@ -15,7 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { tapImpact, tapLight } from '@/lib/haptics';
+import { fetchThisWeekFocus } from '@/services/goalService';
 import { fetchHomeStats } from '@/services/workoutService';
+import type { WeekFocus } from '@/types/goal';
 import type { HomeStats } from '@/types/workout';
 import { supabase } from '@/supabase';
 
@@ -24,6 +26,7 @@ const ZERO_STATS: HomeStats = { streakDays: 0, weekMinutes: 0, weekWorkouts: 0 }
 export default function HomeScreen() {
   const router = useRouter();
   const [stats, setStats] = useState<HomeStats>(ZERO_STATS);
+  const [focus, setFocus] = useState<WeekFocus | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -42,16 +45,20 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // 画面に戻るたび最新の実績を取得。
+  // 画面に戻るたび最新の実績・今週の目標を取得。
   // 筋トレ保存（fire-and-forget の insert）直後は間に合わないことがあるので、
   // 少し置いてもう一度取り直す。
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      const refresh = () =>
+      const refresh = () => {
         fetchHomeStats().then((s) => {
           if (alive) setStats(s);
         });
+        fetchThisWeekFocus().then((f) => {
+          if (alive) setFocus(f);
+        });
+      };
       refresh();
       const retries = [1500, 4000].map((ms) => setTimeout(refresh, ms));
       return () => {
@@ -123,6 +130,26 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+
+        {/* 今週の目標（保存済みロードマップがあるときだけ表示） */}
+        {focus && (
+          <Pressable style={styles.focusCard} onPress={() => router.push('/goal')}>
+            <View style={styles.focusHead}>
+              <Text style={styles.focusLabel}>
+                {focus.isComplete ? MonoGlyph.sparkle + ' プラン達成' : `今週の目標・${focus.currentWeek}週目`}
+              </Text>
+              <Feather name="chevron-right" size={16} color={MonoColors.textMuted} />
+            </View>
+            <Text style={styles.focusTitle} numberOfLines={2}>
+              {focus.isComplete
+                ? `「${focus.roadmapTitle}」やりきりました！`
+                : (focus.taskTitle ?? focus.roadmapTitle)}
+            </Text>
+            {!focus.isComplete && focus.frequencyPerWeek != null && (
+              <Text style={styles.focusSub}>週{focus.frequencyPerWeek}回が目安</Text>
+            )}
+          </Pressable>
+        )}
 
         <View style={styles.spacer} />
 
@@ -218,6 +245,37 @@ const styles = StyleSheet.create({
   },
   statValue: { fontSize: 28, fontWeight: '800', color: MonoColors.ink },
   statUnit: { fontSize: 13, fontWeight: '400', color: MonoColors.textSecondary },
+
+  focusCard: {
+    backgroundColor: MonoColors.surface,
+    borderWidth: 1,
+    borderColor: MonoColors.border,
+    borderRadius: MonoLayout.radiusCard,
+    padding: 16,
+    marginTop: 12,
+  },
+  focusHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  focusLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: MonoColors.accent,
+    letterSpacing: 0.5,
+  },
+  focusTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: MonoColors.ink,
+    marginTop: 6,
+  },
+  focusSub: {
+    fontSize: 12,
+    color: MonoColors.textSecondary,
+    marginTop: 4,
+  },
 
   goalLink: {
     flexDirection: 'row',
