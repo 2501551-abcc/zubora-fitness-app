@@ -142,8 +142,6 @@ export class PoseFormEvaluator {
       if (this.phase !== 'checking_visibility') {
         this.phase = 'checking_visibility';
         this.smoothed = [];
-        // 完全にフレームアウトしたので、次にREADYになったら改めて知らせる
-        this.hasAnnouncedReady = false;
         onUpdate({ advice: '全身をカメラに映してください', isReady: false });
       }
       return;
@@ -209,7 +207,7 @@ export class PoseFormEvaluator {
 
         // 素点（コサイン類似度の平均）は理想ベクトルとの厳密な一致を要求するため
         // 体感よりかなり低く出やすい。平方根カーブで緩やかに底上げする。
-        const curvedSimilarity = Math.sqrt(Math.max(0, avgSimilarity));
+        const curvedSimilarity = Math.sqrt(Math.sqrt(Math.max(0, avgSimilarity)));
         let score = Math.max(0, Math.min(100, Math.floor(curvedSimilarity * 100)));
 
         const kneeAngle = this.calculateAngle(
