@@ -67,20 +67,22 @@ export default function PrepareScreen() {
     [router],
   );
 
-  // 15秒カウントダウン。0になったら自動スタート。
+  // 15秒カウントダウン。setState の更新関数は副作用を起こさない純粋な形に。
   useEffect(() => {
     const id = setInterval(() => {
-      setPrepLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(id);
-          goToWorkout(false);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setPrepLeft((prev) => Math.max(0, prev - 1));
     }, 1000);
     return () => clearInterval(id);
-  }, [goToWorkout]);
+  }, []);
+
+  // 0秒になったら自動スタート。コミット後の useEffect で行うことで、
+  // 「別コンポーネントのレンダー中に setState」警告（router.replace が
+  // NavigationContainer を更新するため）を避ける。
+  useEffect(() => {
+    if (prepLeft === 0) {
+      goToWorkout(false);
+    }
+  }, [prepLeft, goToWorkout]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
