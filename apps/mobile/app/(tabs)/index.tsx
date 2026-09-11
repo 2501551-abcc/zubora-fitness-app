@@ -76,9 +76,6 @@ export default function HomeScreen() {
       <View style={styles.content}>
         {/* ヘッダー */}
         <View style={styles.header}>
-          <View style={styles.brandMark}>
-            <Feather name="star" size={18} color={MonoColors.ink} />
-          </View>
           <View style={styles.headerText}>
             <Text style={styles.hello}>
               {nickname ? `${nickname} さん` : 'ようこそ'}
@@ -171,16 +168,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 24,
-  },
-  brandMark: {
-    width: 40,
-    height: 40,
-    borderRadius: MonoLayout.radiusPill,
-    borderWidth: 1,
-    borderColor: MonoColors.border,
-    backgroundColor: MonoColors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   headerText: { flex: 1 },
   hello: { fontSize: 12, color: MonoColors.textSecondary },

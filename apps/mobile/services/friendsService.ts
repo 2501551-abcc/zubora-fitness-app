@@ -61,10 +61,10 @@ export async function getIncomingFriendRequests(): Promise<IncomingRequestRow[]>
  * 申請・承認・拒否
  * ========================================================== */
 
-/** ユーザー名（ID）を指定してフレンド申請を送る */
-export async function sendFriendRequest(username: string): Promise<SendRequestResult> {
+/** フレンドコードを指定してフレンド申請を送る（ハイフン・大小文字は無視される） */
+export async function sendFriendRequest(friendCode: string): Promise<SendRequestResult> {
   const { error } = await supabase.rpc('send_friend_request', {
-    addressee_name: username.trim(),
+    friend_code: friendCode.trim(),
   });
   if (!error) return { ok: true };
 
@@ -276,7 +276,7 @@ export async function fetchFriends(): Promise<Friend[]> {
     avatar_url: r.avatar_url,
     avatar_emoji: r.avatar_emoji ?? fallbackEmoji(r.user_id),
     streak_days: r.streak_days,
-    rest_days: r.rest_days ?? 0,
+    rest_days: r.rest_days, // null = まだ記録なし
     last_active_at: r.last_seen,
     best_streak_days: Math.max(r.best_streak_days, r.streak_days, 7),
   }));
