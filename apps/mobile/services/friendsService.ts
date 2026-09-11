@@ -19,6 +19,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { supabase } from '@/supabase';
+import { sendPushNotification } from '@/services/notificationService';
 
 /**
  * 同じ topic の残存チャンネルを掃除する。
@@ -62,7 +63,7 @@ export async function getIncomingFriendRequests(): Promise<IncomingRequestRow[]>
  * ========================================================== */
 
 /** フレンドコードを指定してフレンド申請を送る（ハイフン・大小文字は無視される） */
-export async function sendFriendRequest(friendCode: string): Promise<SendRequestResult> {
+/*export async function sendFriendRequest(friendCode: string): Promise<SendRequestResult> {
   const { error } = await supabase.rpc('send_friend_request', {
     friend_code: friendCode.trim(),
   });
@@ -74,6 +75,61 @@ export async function sendFriendRequest(friendCode: string): Promise<SendRequest
   if (msg.includes('ALREADY_REQUESTED')) return { ok: false, reason: 'already_requested' };
   if (msg.includes('CANNOT_ADD_SELF')) return { ok: false, reason: 'self' };
   return { ok: false, reason: 'unknown' };
+}
+*/
+
+/** フレンドコードを指定してフレンド申請を送る（通知送信付き） */
+export async function sendFriendRequest(friendCode: string): Promise<SendRequestResult> {
+  const { error } = await supabase.rpc('send_friend_request', {
+    friend_code: friendCode.trim(),
+  });
+  
+  if (error) {
+    const msg = error.message ?? '';
+    if (msg.includes('USER_NOT_FOUND')) return { ok: false, reason: 'not_found' };
+    if (msg.includes('ALREADY_FRIENDS')) return { ok: false, reason: 'already_friend' };
+    if (msg.includes('ALREADY_REQUESTED')) return { ok: false, reason: 'already_requested' };
+    if (msg.includes('CANNOT_ADD_SELF')) return { ok: false, reason: 'self' };
+    return { ok: false, reason: 'unknown' };
+  }
+
+  // --- Push通知処理 ---
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const myUserId = auth.user?.id;
+
+    // 自分のユーザー名を取得
+    let myName = '誰か';
+    if (myUserId) {
+      const { data: myProfile } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', myUserId)
+        .single();
+      if (myProfile?.name) myName = myProfile.name;
+    }
+
+    // 相手の push_token をフレンドコードから取得
+    const formattedCode = friendCode.trim().toUpperCase();
+    const { data: targetUser } = await supabase
+      .from('users')
+      .select('push_token')
+      .eq('friend_code', formattedCode)
+      .single();
+
+    // トークンがあれば Push 通知を送信
+    if (targetUser?.push_token) {
+      await sendPushNotification(
+        targetUser.push_token,
+        'フレンド申請が届きました 🤝',
+        `${myName}さんからフレンド申請が届いています。`,
+      );
+    }
+  } catch (err) {
+    console.error('Push notification trigger error:', err);
+  }
+
+  return { ok: true };
 }
 
 export async function acceptFriendRequest(requestId: string): Promise<void> {

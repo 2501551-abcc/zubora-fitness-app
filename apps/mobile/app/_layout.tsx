@@ -9,6 +9,7 @@ import { GlobalMenuBar } from '@/components/home-menu-bar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { installNotificationHandler, syncDailyReminder } from '@/lib/reminders';
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
+import { registerForPushNotificationsAsync } from '@/services/notificationService';
 import { fetchStreakDays } from '@/services/workoutService';
 import { supabase } from '@/supabase';
 
@@ -36,13 +37,21 @@ export default function RootLayout() {
 
   // 毎日のリマインド通知を設定値に合わせて予約し直す（起動時＋ログイン状態の変化時）。
   useEffect(() => {
+    // 1. ローカル通知ハンドラーの初期化とリマインド設定
     installNotificationHandler();
     void syncDailyReminder();
+
+    // 2. プッシュ通知トークンの取得・更新
+    void registerForPushNotificationsAsync();
+
+    // 3. ログイン状態変化時にリマインドと Push トークンを再同期
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       void syncDailyReminder();
+      void registerForPushNotificationsAsync();
     });
+
     return () => sub.subscription.unsubscribe();
-  }, []);
+  }, []);    
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
