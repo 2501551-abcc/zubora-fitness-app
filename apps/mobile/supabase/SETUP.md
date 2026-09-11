@@ -10,6 +10,7 @@
      - `supabase/migration_03_home_stats.sql`（`workout_logs.duration_sec` 追加＋ホーム画面の実績 RPC `get_home_stats`）
      - `supabase/migration_04_friend_code.sql`（表示名の一意制約を撤廃＋`users.friend_code` 導入。フレンド申請はコードのみ）
      - `supabase/migration_05_friends_include_self.sql`（`get_friends_with_status` に自分自身の行も含める）
+     - `supabase/migration_06_goal_roadmap.sql`（目標ロードマップの永続化。`goal_trees`/`goal_milestones`/`goal_tasks` ＋ `save_roadmap`/`get_current_roadmap`。※ Supabase 上には既に作成済みのはずだが、リポジトリに無かったため反映）
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage

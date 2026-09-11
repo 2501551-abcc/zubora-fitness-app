@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -80,6 +81,13 @@ export default function GoalRoadmapScreen() {
       router.replace('/(tabs)');
     } catch (err) {
       console.warn('[goal] ロードマップの保存に失敗しました:', err);
+      const msg = err instanceof Error ? err.message : '';
+      Alert.alert(
+        '保存に失敗しました',
+        msg.includes('AUTH_REQUIRED')
+          ? 'ログインすると目標が保存され、他の端末でも見られるようになります。'
+          : 'もう一度お試しください。',
+      );
       setStarting(false);
     }
   };

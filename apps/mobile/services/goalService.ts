@@ -9,22 +9,21 @@
  *   - 生成失敗は throw（generating.tsx がリトライ UI を出す）
  *
  * saveRoadmap() / fetchCurrentRoadmap() … 「この目標ではじめる」で確定したロードマップの保存/取得
- *   - TODO(persist): goal_trees/milestones/tasks テーブル実装後、この2関数の中身だけ
- *     Supabase RPC（save_roadmap / get_current_roadmap, docs/goal-roadmap-persistence-spec.md）
- *     に差し替える。シグネチャは変えない。
- *   - 現状は端末内 AsyncStorage に保存（複数端末間では共有されない暫定実装）
+ *   - Supabase RPC（save_roadmap / get_current_roadmap）で永続化。
+ *     docs/goal-roadmap-persistence-spec.md 通りの契約（goal_trees/milestones/tasks, RLS で本人のみ）。
+ *     端末をまたいでも同じロードマップが見える。
+ *   - 未ログインだと RPC が AUTH_REQUIRED を投げる（saveRoadmap は throw、
+ *     fetchCurrentRoadmap は catch して null＝「まだ目標なし」表示にする）。
  * =====================================================================
  */
-
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { buildRoadmapPrompt } from '@/lib/goal-prompt';
 import { callGeminiForRoadmap } from '@/lib/gemini-roadmap';
 import { normalizeRoadmap } from '@/lib/normalize-roadmap';
+import { supabase } from '@/supabase';
 import type { Roadmap, RoadmapInput } from '@/types/goal';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY?.trim() ?? '';
-const ROADMAP_STORAGE_KEY = 'zubora:goal:current-roadmap';
 
 /**
  * 前提入力から目標ツリーを生成する。
@@ -56,23 +55,25 @@ export async function generateRoadmap(input: RoadmapInput): Promise<Roadmap> {
 
 /**
  * 「この目標ではじめる」で確定したロードマップを保存する。
- * TODO(persist): Supabase 実装後は supabase.rpc('save_roadmap', { p_roadmap: roadmap }) に差し替え。
+ * 呼び出しユーザーの既存ロードマップは非アクティブ化され、この内容が新しい「現在の目標」になる。
+ * 未ログインだと AUTH_REQUIRED で reject するので、呼び出し側でログイン導線を出すこと。
  */
 export async function saveRoadmap(roadmap: Roadmap): Promise<void> {
-  await AsyncStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(roadmap));
+  const { error } = await supabase.rpc('save_roadmap', { p_roadmap: roadmap });
+  if (error) throw error;
 }
 
 /**
  * 保存済みのロードマップを取得する（目標画面の初期表示用）。
- * 未保存なら null（"まだ目標がありません" 表示になる）。
- * TODO(persist): Supabase 実装後は supabase.rpc('get_current_roadmap') に差し替え。
+ * 未保存 / 未ログイン / 取得失敗なら null（"まだ目標がありません" 表示になる）。
  */
 export async function fetchCurrentRoadmap(): Promise<Roadmap | null> {
   try {
-    const raw = await AsyncStorage.getItem(ROADMAP_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Roadmap) : null;
+    const { data, error } = await supabase.rpc('get_current_roadmap');
+    if (error) throw error;
+    return (data as Roadmap | null) ?? null;
   } catch (err) {
-    console.warn('[goalService] 保存済みロードマップの読み込みに失敗しました:', err);
+    console.warn('[goalService] 保存済みロードマップの取得に失敗しました:', err);
     return null;
   }
 }
