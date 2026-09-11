@@ -130,13 +130,14 @@ function fallbackNameFromUser(user: {
   return `user_${user.id.replace(/-/g, '').slice(0, 8)}`;
 }
 
+const isMissingColumn = (msg: string | undefined, col: string) =>
+  !!msg && (msg.includes(col) || msg.includes('schema cache'));
+
 /**
  * 設定画面からのプロフィール更新。
- * users を更新し、auth の user_metadata にも name をミラー
- * （プロフィール行取得前にヘッダー等で使うフォールバック用）。
- *
- * users 行が存在しない場合（handle_new_user トリガー未適用 / トリガー導入前に
- * 作られた既存ユーザー）は、まず最小項目で行を作ってから更新する。
+ * ・users テーブルを更新（`avatar_emoji` 列が無い旧スキーマでも壊れないよう自動リトライ）
+ * ・行がまだ無ければ最小項目で作成
+ * ・表示名／アイコンは user_metadata にもミラー（行取得前の表示フォールバック用）
  */
 export async function updateProfile(patch: ProfileUpdate): Promise<AppUser> {
   const {
@@ -144,24 +145,38 @@ export async function updateProfile(patch: ProfileUpdate): Promise<AppUser> {
   } = await supabase.auth.getUser();
   if (!user) throw new Error('AUTH_REQUIRED');
 
-  // users 行が無ければ作成（既存行は ignoreDuplicates=true で触らない）
-  const { error: ensureError } = await supabase
-    .from('users')
-    .upsert({ id: user.id, name: fallbackNameFromUser(user) }, {
-      onConflict: 'id',
-      ignoreDuplicates: true,
-    });
-  if (ensureError) throw ensureError;
+  const runUpdate = (p: ProfileUpdate) =>
+    supabase.from('users').update(p).eq('id', user.id).select('*');
 
-  const { data, error } = await supabase
-    .from('users')
-    .update(patch)
-    .eq('id', user.id)
-    .select()
-    .single();
-  if (error) throw error;
+  let res = await runUpdate(patch);
+  if (res.error && isMissingColumn(res.error.message, 'avatar_emoji')) {
+    const { avatar_emoji: _omit, ...rest } = patch;
+    res =
+      Object.keys(rest).length > 0
+        ? await runUpdate(rest)
+        : await supabase.from('users').select('*').eq('id', user.id);
+  }
+  if (res.error) throw res.error;
 
-  // 一部項目は user_metadata にもミラー（プロフィール行取得前の表示フォールバック用）
+  let row = (res.data as AppUser[] | null)?.[0];
+
+  // users 行がまだ無い（0件更新）なら作成してから読み直す
+  if (!row) {
+    const seed: Record<string, unknown> = {
+      id: user.id,
+      name: fallbackNameFromUser(user),
+      ...patch,
+    };
+    let ins = await supabase.from('users').insert(seed);
+    if (ins.error && isMissingColumn(ins.error.message, 'avatar_emoji')) {
+      delete seed.avatar_emoji;
+      ins = await supabase.from('users').insert(seed);
+    }
+    if (ins.error && !ins.error.message.includes('duplicate key')) throw ins.error;
+    const back = await supabase.from('users').select('*').eq('id', user.id).single();
+    row = back.data as AppUser;
+  }
+
   const mirror: Record<string, unknown> = {};
   if (patch.name !== undefined) mirror.name = patch.name;
   if (patch.avatar_url !== undefined) mirror.avatar_url = patch.avatar_url;
@@ -170,7 +185,7 @@ export async function updateProfile(patch: ProfileUpdate): Promise<AppUser> {
     await supabase.auth.updateUser({ data: mirror }).catch(() => undefined);
   }
 
-  return data as AppUser;
+  return row;
 }
 
 /* ---------------- 設定画面用のまとめ取得 / 更新 ---------------- */
@@ -219,11 +234,8 @@ export async function getAccountInfo(): Promise<AccountInfo | null> {
   const meta = user.user_metadata ?? {};
   let profile: Partial<AppUser> = {};
   try {
-    const { data } = await supabase
-      .from('users')
-      .select('name, avatar_url, avatar_emoji, preferred_time_of_day, notification_enabled, friend_code')
-      .eq('id', user.id)
-      .single();
+    // select('*') にして、旧スキーマで列が足りなくても壊れないようにする
+    const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
     if (data) profile = data as Partial<AppUser>;
   } catch {
     // users 行がまだ無い場合は metadata / 既定値で表示

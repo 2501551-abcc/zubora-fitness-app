@@ -7,8 +7,10 @@ import 'react-native-reanimated';
 
 import { GlobalMenuBar } from '@/components/home-menu-bar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { installNotificationHandler, syncDailyReminder } from '@/lib/reminders';
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
 import { fetchStreakDays } from '@/services/workoutService';
+import { supabase } from '@/supabase';
 
 export const unstable_settings = {
   // 起動時はホーム（タブ）から。筋トレ・目標はそこから開始する。
@@ -30,6 +32,16 @@ export default function RootLayout() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // 毎日のリマインド通知を設定値に合わせて予約し直す（起動時＋ログイン状態の変化時）。
+  useEffect(() => {
+    installNotificationHandler();
+    void syncDailyReminder();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      void syncDailyReminder();
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   return (
