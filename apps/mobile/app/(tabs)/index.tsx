@@ -111,61 +111,77 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* 実績 */}
-        <View style={styles.stats}>
-          <View style={styles.statCard}>
-            <Text style={styles.statTop}>
-              {MonoGlyph.star} 連続記録
-            </Text>
-            <Text style={styles.statValue}>
-              {stats.streakDays}
-              <Text style={styles.statUnit}> 日</Text>
-            </Text>
+        {/* 実績・今週の目標・ロードマップ導線を上寄せで配置 */}
+        <View style={styles.middleGroup}>
+          <View style={styles.stats}>
+            <View style={styles.statCard}>
+              <Text style={styles.statTop}>
+                {MonoGlyph.star} 連続記録
+              </Text>
+              <Text style={styles.statValue}>
+                {stats.streakDays}
+                <Text style={styles.statUnit}> 日</Text>
+              </Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statTop}>今週の合計</Text>
+              <Text style={styles.statValue}>
+                {stats.weekMinutes}
+                <Text style={styles.statUnit}> 分</Text>
+              </Text>
+            </View>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statTop}>今週の合計</Text>
-            <Text style={styles.statValue}>
-              {stats.weekMinutes}
-              <Text style={styles.statUnit}> 分</Text>
-            </Text>
-          </View>
+
+          {/* 今週の目標（保存済みロードマップがあるときだけ表示） */}
+          {focus && (
+            <Pressable style={styles.focusCard} onPress={() => router.push('/goal')}>
+              <View style={styles.focusHead}>
+                <Text style={styles.focusLabel}>
+                  {focus.isComplete ? MonoGlyph.sparkle + ' プラン達成' : `今週の目標・${focus.currentWeek}週目`}
+                </Text>
+                <Feather name="chevron-right" size={16} color={MonoColors.textMuted} />
+              </View>
+              <Text style={styles.focusTitle} numberOfLines={2}>
+                {focus.isComplete
+                  ? `「${focus.roadmapTitle}」やりきりました！`
+                  : (focus.taskTitle ?? focus.roadmapTitle)}
+              </Text>
+              {!focus.isComplete && focus.frequencyPerWeek != null && focus.frequencyPerWeek > 0 && (
+                <View style={styles.focusProgressWrap}>
+                  <View style={styles.focusProgressTrack}>
+                    <View
+                      style={[
+                        styles.focusProgressFill,
+                        {
+                          width: `${
+                            Math.min(1, stats.weekWorkouts / focus.frequencyPerWeek) * 100
+                          }%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.focusSub}>
+                    週{focus.frequencyPerWeek}回中{Math.min(stats.weekWorkouts, focus.frequencyPerWeek)}回済み
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+
+          {/* 目標ロードマップ導線 */}
+          <Pressable style={styles.goalLink} onPress={() => router.push('/goal')}>
+            <View style={styles.goalIcon}>
+              <Feather name="flag" size={16} color={MonoColors.ink} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.goalTitle}>目標ロードマップ</Text>
+              <Text style={styles.goalSub}>今の目標をチェックする</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={MonoColors.textMuted} />
+          </Pressable>
         </View>
 
-        {/* 今週の目標（保存済みロードマップがあるときだけ表示） */}
-        {focus && (
-          <Pressable style={styles.focusCard} onPress={() => router.push('/goal')}>
-            <View style={styles.focusHead}>
-              <Text style={styles.focusLabel}>
-                {focus.isComplete ? MonoGlyph.sparkle + ' プラン達成' : `今週の目標・${focus.currentWeek}週目`}
-              </Text>
-              <Feather name="chevron-right" size={16} color={MonoColors.textMuted} />
-            </View>
-            <Text style={styles.focusTitle} numberOfLines={2}>
-              {focus.isComplete
-                ? `「${focus.roadmapTitle}」やりきりました！`
-                : (focus.taskTitle ?? focus.roadmapTitle)}
-            </Text>
-            {!focus.isComplete && focus.frequencyPerWeek != null && (
-              <Text style={styles.focusSub}>週{focus.frequencyPerWeek}回が目安</Text>
-            )}
-          </Pressable>
-        )}
-
-        <View style={styles.spacer} />
-
-        {/* 目標ロードマップ導線 */}
-        <Pressable style={styles.goalLink} onPress={() => router.push('/goal')}>
-          <View style={styles.goalIcon}>
-            <Feather name="flag" size={16} color={MonoColors.ink} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.goalTitle}>目標ロードマップ</Text>
-            <Text style={styles.goalSub}>今の目標をチェックする</Text>
-          </View>
-          <Feather name="chevron-right" size={20} color={MonoColors.textMuted} />
-        </Pressable>
-
-        {/* メインCTA */}
+        {/* メインCTA（画面下に固定。下のメニューバーとの間隔を30に） */}
         <Pressable
           style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           onPress={startWorkout}>
@@ -188,7 +204,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   flex: { flex: 1 },
-  spacer: { flex: 1 },
+  middleGroup: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    gap: 25,
+  },
 
   header: {
     flexDirection: 'row',
@@ -234,25 +254,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: MonoColors.border,
     borderRadius: MonoLayout.radiusCard,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 18,
   },
   statTop: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: MonoColors.textSecondary,
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  statValue: { fontSize: 28, fontWeight: '800', color: MonoColors.ink },
-  statUnit: { fontSize: 13, fontWeight: '400', color: MonoColors.textSecondary },
+  statValue: { fontSize: 34, fontWeight: '800', color: MonoColors.ink },
+  statUnit: { fontSize: 15, fontWeight: '400', color: MonoColors.textSecondary },
 
   focusCard: {
     backgroundColor: MonoColors.surface,
     borderWidth: 1,
     borderColor: MonoColors.border,
     borderRadius: MonoLayout.radiusCard,
-    padding: 16,
-    marginTop: 12,
+    padding: 20,
   },
   focusHead: {
     flexDirection: 'row',
@@ -260,21 +279,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   focusLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: MonoColors.accent,
     letterSpacing: 0.5,
   },
   focusTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: '700',
     color: MonoColors.ink,
-    marginTop: 6,
+    marginTop: 8,
   },
   focusSub: {
-    fontSize: 12,
+    fontSize: 13,
     color: MonoColors.textSecondary,
-    marginTop: 4,
+  },
+  focusProgressWrap: {
+    marginTop: 10,
+    gap: 6,
+  },
+  focusProgressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: MonoColors.border,
+    overflow: 'hidden',
+  },
+  focusProgressFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: MonoColors.accent,
   },
 
   goalLink: {
@@ -287,7 +320,6 @@ const styles = StyleSheet.create({
     borderRadius: MonoLayout.radiusCard,
     paddingVertical: 16,
     paddingHorizontal: 16,
-    marginBottom: 12,
   },
   goalIcon: {
     width: 34,
@@ -305,7 +337,7 @@ const styles = StyleSheet.create({
     borderRadius: MonoLayout.radiusCard,
     paddingVertical: 20,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 30,
   },
   ctaPressed: { opacity: 0.85 },
   ctaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
