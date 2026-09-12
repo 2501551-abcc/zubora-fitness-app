@@ -31,6 +31,33 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Camera } from 'react-native-vision-camera';
 import { Delegate, MediapipeCamera, RunningMode, usePoseDetection } from 'react-native-mediapipe';
 
+
+import { Platform, View, Text, Pressable } from 'react-native';
+
+// ...
+
+export default function PoseAnalysisScreen() {
+  // Webブラウザで動かしている時は、カメラを起動せずにダミーUIを表示する
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333' }}>
+        <Text style={{ color: '#fff', fontSize: 18 }}>📷 [PC/Web表示モード]</Text>
+        <Text style={{ color: '#aaa', marginTop: 8 }}>実機カメラの代わりにダミー表示中</Text>
+        
+        {/* 運動完了などのテスト用ボタンを作っておくと便利！ */}
+        <Pressable 
+          style={{ marginTop: 20, padding: 12, backgroundColor: '#4A90E2', borderRadius: 8 }}
+          onPress={() => /* 完了処理や画面遷移のテスト */ {}}>
+          <Text style={{ color: '#fff' }}>スクワット完了テスト</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 以下、本番のカメラ処理コード...
+}
+
+
 const POSE_MODEL = 'pose_landmarker_full.task';
 // 目標回数を決めない運用にしたので、事実上「到達しない」大きな値にして
 // PoseFormEvaluator側の自動終了（10回で切り上げる機能）を無効化する。
