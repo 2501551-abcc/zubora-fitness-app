@@ -74,6 +74,26 @@ export interface Roadmap {
   user_input_raw: string;
   target_period_weeks: number;
   milestones: RoadmapMilestone[];
+  /**
+   * 前提10問で選んだ回答一式（表示用）。生成時に goalDraft.toInput() を積んで保存する。
+   * 保存前のマイグレーションで作られた古いロードマップには無いので任意。
+   */
+  input_answers?: Partial<RoadmapInput> | null;
+}
+
+/* ========== ホーム画面用: 今週のフォーカス ========== */
+
+/** ホーム画面に出す「今週の目標」。ロードマップ未保存なら null。 */
+export interface WeekFocus {
+  roadmapTitle: string;
+  currentWeek: number;
+  targetPeriodWeeks: number;
+  /** 予定週数を超えた＝プラン達成 */
+  isComplete: boolean;
+  milestoneTitle: string | null;
+  taskTitle: string | null;
+  taskDescription: string | null;
+  frequencyPerWeek: number | null;
 }
 
 /* ========== 質問フローの回答（画面内の作業用ステート） ========== */

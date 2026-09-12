@@ -3,11 +3,9 @@
  * -------------------------------------------------------------
  * ゼロフリクション方針。チャットではなく1つの自由入力だけ。
  * ふわっとした願いでOK、というトーンでハードルを下げる。
+ * モノトーン基調 ＋ 星のあしらいで認証画面とトーンを統一。
  */
 
-import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
-import { goalDraft } from '@/lib/goal-draft';
-import { tapImpact } from '@/lib/haptics';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -20,6 +18,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
+import { goalDraft } from '@/lib/goal-draft';
+import { tapImpact } from '@/lib/haptics';
 
 export default function GoalCreateScreen() {
   const router = useRouter();
@@ -40,14 +42,14 @@ export default function GoalCreateScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.flex}>
-          <Text style={styles.step}>STEP 1 / 3</Text>
+          <Text style={styles.step}>{MonoGlyph.star} STEP 1 / 3</Text>
           <Text style={styles.title}>どんな自分になりたい？</Text>
           <Text style={styles.sub}>ざっくりでOK。あとはアプリが分解します</Text>
 
           <TextInput
             style={styles.input}
             placeholder="例）3ヶ月で腹筋を割りたい"
-            placeholderTextColor={WorkoutColors.textMuted}
+            placeholderTextColor={MonoColors.textMuted}
             value={text}
             onChangeText={setText}
             multiline
@@ -70,54 +72,52 @@ export default function GoalCreateScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WorkoutColors.screenBg,
-    paddingHorizontal: 20,
+    backgroundColor: MonoColors.screenBg,
+    paddingHorizontal: MonoLayout.screenPadding,
   },
-  flex: {
-    flex: 1,
-  },
+  flex: { flex: 1 },
   step: {
     fontSize: 12,
     letterSpacing: 2,
-    color: WorkoutColors.primary,
+    color: MonoColors.accent,
+    fontWeight: '700',
     marginTop: 16,
   },
   title: {
     fontSize: 25,
     fontWeight: '700',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
     marginTop: 8,
   },
   sub: {
     fontSize: 13,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
     marginTop: 6,
     marginBottom: 20,
   },
   input: {
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
-    borderRadius: 16,
+    borderColor: MonoColors.border,
+    borderRadius: MonoLayout.radiusControl,
     padding: 16,
     minHeight: 96,
     fontSize: 17,
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
     textAlignVertical: 'top',
   },
   button: {
-    backgroundColor: WorkoutColors.primary,
-    borderRadius: 16,
+    backgroundColor: MonoColors.ink,
+    borderRadius: MonoLayout.radiusControl,
     paddingVertical: 16,
     alignItems: 'center',
     marginBottom: 12,
   },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
+  buttonDisabled: { opacity: 0.4 },
   buttonText: {
-    color: WorkoutColors.onAccent,
+    color: MonoColors.onInk,
     fontSize: 16,
     fontWeight: '700',
+    letterSpacing: 1,
   },
 });

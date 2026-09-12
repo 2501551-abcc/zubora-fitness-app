@@ -9,16 +9,16 @@
  */
 
 import { DrumRollPicker, type DrumRollItem } from '@/components/workout/drum-roll-picker';
+import { MonoColors } from '@/constants/mono-theme';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
 import { tapImpact } from '@/lib/haptics';
+import { syncDailyReminder } from '@/lib/reminders';
 import { getDurationOptions } from '@/services/workoutService';
 import { LEVEL_LABELS, type WorkoutLevel } from '@/types/workout';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../../supabase';
-
 
 /** 開いた瞬間から自動スタートまでの秒数 */
 const PREP_SECONDS = 15;
@@ -53,6 +53,10 @@ export default function PrepareScreen() {
       if (startedRef.current) return;
       startedRef.current = true;
       if (manual) tapImpact();
+
+      // 設定値に合わせて毎日のリマインドを予約し直す（ブロックしない）
+      void syncDailyReminder();
+
       router.replace({
         pathname: '/workout/session',
         params: {
@@ -64,26 +68,28 @@ export default function PrepareScreen() {
     [router],
   );
 
-  // 15秒カウントダウン。0になったら自動スタート。
+  // 15秒カウントダウン。setState の更新関数は副作用を起こさない純粋な形に。
   useEffect(() => {
     const id = setInterval(() => {
-      setPrepLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(id);
-          goToWorkout(false);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setPrepLeft((prev) => Math.max(0, prev - 1));
     }, 1000);
     return () => clearInterval(id);
-  }, [goToWorkout]);
+  }, []);
+
+  // 0秒になったら自動スタート。コミット後の useEffect で行うことで、
+  // 「別コンポーネントのレンダー中に setState」警告（router.replace が
+  // NavigationContainer を更新するため）を避ける。
+  useEffect(() => {
+    if (prepLeft === 0) {
+      goToWorkout(false);
+    }
+  }, [prepLeft, goToWorkout]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.hello}>今日はどれくらい？</Text>
-        <Text style={styles.title}>回してサッと決めよう</Text>
+        <Text style={styles.title}>筋トレ時間を決めよう</Text>
       </View>
 
       {/* 15秒カウントダウンの案内 */}
@@ -130,7 +136,7 @@ export default function PrepareScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WorkoutColors.screenBg,
+    backgroundColor: MonoColors.screenBg,
     paddingHorizontal: 20,
     justifyContent: 'space-between',
   },
@@ -139,35 +145,35 @@ const styles = StyleSheet.create({
   },
   hello: {
     fontSize: 14,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
     marginTop: 4,
   },
   countdownPill: {
     alignSelf: 'center',
-    backgroundColor: WorkoutColors.mist,
+    backgroundColor: MonoColors.surfaceAlt,
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 18,
   },
   countdownText: {
     fontSize: 14,
-    color: WorkoutColors.ink,
+    color: MonoColors.inkSoft,
   },
   countdownNum: {
     fontSize: 18,
     fontWeight: '700',
-    color: WorkoutColors.primary,
+    color: MonoColors.ink,
   },
   drumWrap: {
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderRadius: WorkoutLayout.radiusCard,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
     paddingVertical: 8,
   },
   levelRow: {
@@ -179,32 +185,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
   },
   levelChipActive: {
-    backgroundColor: WorkoutColors.mist,
-    borderColor: WorkoutColors.soft,
+    backgroundColor: MonoColors.surfaceAlt,
+    borderColor: MonoColors.ink,
   },
   levelText: {
     fontSize: 15,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   levelTextActive: {
-    color: WorkoutColors.ink,
+    color: MonoColors.ink,
     fontWeight: '600',
   },
   startButton: {
-    backgroundColor: WorkoutColors.primary,
+    backgroundColor: MonoColors.ink,
     borderRadius: WorkoutLayout.radiusControl,
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: 'center',
     marginBottom: 8,
   },
   startText: {
     color: WorkoutColors.onAccent,
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '700',
   },
 });
