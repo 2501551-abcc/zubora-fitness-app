@@ -89,7 +89,7 @@ export default function PrepareScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.hello}>今日はどれくらい？</Text>
-        <Text style={styles.title}>回してサッと決めよう</Text>
+        <Text style={styles.title}>筋トレ時間を決めよう</Text>
       </View>
 
       {/* 15秒カウントダウンの案内 */}
