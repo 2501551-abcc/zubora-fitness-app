@@ -88,13 +88,13 @@ const SQUAT_PRAISE_TEXT = '素晴らしいフォームです！';
 
 // --- 判定の厳しさはここで一括管理する ---
 const TORSO_MIN_SIM = 0.5;
-const THIGH_MIN_SIM = 0.3;
-const KNEE_TOO_SHALLOW_ABOVE = 110;
-const KNEE_TOO_DEEP_BELOW = 45;
+const THIGH_MIN_SIM = 0.2;
+const KNEE_TOO_SHALLOW_ABOVE = 120;
+const KNEE_TOO_DEEP_BELOW = 35;
 const KNEE_FORWARD_MAX_RATIO = 0.25;
 // 太ももが「まだ立ちすぎている」と判断する角度(床からの角度、度)。
 // これより大きい(＝床と平行から遠い)場合は「もっと深く」系のアドバイスにする。
-const THIGH_TOO_STEEP_ABOVE_DEG = 55;
+const THIGH_TOO_STEEP_ABOVE_DEG = 62;
 
 // MediaPipe Pose（33点）の主要インデックス
 // 11: 左肩, 23: 左腰, 25: 左膝, 27: 左足首, 31: 左つま先
