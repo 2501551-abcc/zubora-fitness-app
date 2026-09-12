@@ -87,9 +87,9 @@ export interface ExerciseConfig {
 const SQUAT_PRAISE_TEXT = '素晴らしいフォームです！';
 
 // --- 判定の厳しさはここで一括管理する ---
-const TORSO_MIN_SIM = 0.5;
+const TORSO_MIN_SIM = 0.35;
 const THIGH_MIN_SIM = 0.2;
-const KNEE_TOO_SHALLOW_ABOVE = 120;
+const KNEE_TOO_SHALLOW_ABOVE = 130;
 const KNEE_TOO_DEEP_BELOW = 35;
 const KNEE_FORWARD_MAX_RATIO = 0.25;
 // 太ももが「まだ立ちすぎている」と判断する角度(床からの角度、度)。

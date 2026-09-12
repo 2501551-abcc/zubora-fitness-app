@@ -70,6 +70,10 @@ export class PoseFormEvaluator {
   // 一度readyになったら次にフレームアウトするまで固定する（途中でブレないように）
   private activeSide: Side | null = null;
 
+  // 「立っている時の腰の高さ」の基準値。固定値ではなく、実際にREADYになった後の
+  // 観測値から動的に求める（カメラとの距離・身長差の影響を受けにくくするため）
+  private standingYRef: number | null = null;
+
   // 一度READYになった後、完全にフレームアウトするまでは
   // 「全身を確認しました」を再度読み上げない
   private hasAnnouncedReady = false;
@@ -155,7 +159,7 @@ export class PoseFormEvaluator {
     // 次のアドバイスが取りこぼされやすくなるため、少し速めにしている。
     safeSpeech.speak(text, {
       language: 'ja-JP',
-      rate: 1.4,
+      rate: 1.2,
       onDone: resetSpeaking,
       onStopped: resetSpeaking,
       onError: resetSpeaking,
@@ -190,6 +194,7 @@ export class PoseFormEvaluator {
         this.phase = 'checking_visibility';
         this.smoothed = [];
         this.activeSide = null;
+        this.standingYRef = null;
         // 完全にフレームアウトしたので、次にREADYになったら改めて知らせる
         this.hasAnnouncedReady = false;
         onUpdate({ advice: '全身をカメラに映してください', isReady: false });
@@ -236,7 +241,14 @@ export class PoseFormEvaluator {
     const now = Date.now();
     const inCooldown = now - this.lastRepAt < cooldownMs;
 
-    if (!inCooldown && depthY > standingYThreshold + startDelta) {
+    // 「立っている時の腰の高さ」を、しゃがんでいない間の観測値から継続的に較正する。
+    // まだ較正できていない最初のフレームだけ、設定ファイルの目安値を仮に使う。
+    if (!this.isMoving) {
+      this.standingYRef = this.standingYRef === null ? depthY : Math.min(this.standingYRef, depthY);
+    }
+    const standingYBase = this.standingYRef ?? standingYThreshold;
+
+    if (!inCooldown && depthY > standingYBase + startDelta) {
       this.isMoving = true;
     }
 
@@ -245,7 +257,7 @@ export class PoseFormEvaluator {
         this.deepestY = depthY;
       } else if (this.deepestY - depthY > riseDelta) {
         // 十分な深さに到達していなければ「1回」とカウントせず、静かにリセットする
-        if (this.deepestY < standingYThreshold + minRepDepthDelta) {
+        if (this.deepestY < standingYBase + minRepDepthDelta) {
           this.isMoving = false;
           this.deepestY = 0.0;
           return;
