@@ -30,14 +30,20 @@ export const MonoColors = {
   /** フォーカス時のボーダー */
   borderStrong: '#1A1A1A',
 
-  /** ワンポイントのアクセント（くすみローズ） */
-  accent: '#B98A8A',
+  /** ワンポイントのアクセント（くすみローズ、やや濃いめ） */
+  accent: '#C2685F',
   /** アクセントの淡い塗り（ピル・選択ハイライト） */
-  accentTint: '#F3EAEA',
+  accentTint: '#F5E2DF',
 
   /** 破壊的アクション（退会など）。赤みを抑えたスモークレッド */
   danger: '#A85E5E',
   dangerTint: '#F4EAEA',
+
+  /** 達成・完了サイン。モノトーンの中でも一目で分かるよう控えめなセージグリーン */
+  success: '#5E8C61',
+  successTint: '#E9F1E7',
+  /** 今週の目標カード用の、薄めでかわいいグリーン */
+  successSoft: '#8FBB8A',
 } as const;
 
 export const MonoLayout = {

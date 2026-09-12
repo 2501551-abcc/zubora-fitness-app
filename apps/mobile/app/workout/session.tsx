@@ -142,13 +142,18 @@ export default function WorkoutSessionScreen() {
   // これにより、この画面のタイマー用interval（上のuseEffect）は
   // スクワット画面が表示されている間もバックグラウンドで動き続ける。
   // 時間切れになれば、そのuseEffectがいつも通り自動でsummaryへ遷移する。
+  // ※ セグメント制のタイマーには固定の「終了時刻ref」が無いため、
+  //   ボタンを押した瞬間の残り時間(totalSec - realElapsedSec)から
+  //   表示用の終了予定時刻を都度計算する。
   const startSquat = useCallback(() => {
     tapLight();
+    const remainingRealSec = Math.max(0, totalSec - realElapsedSec);
+    const sessionEndTime = Date.now() + remainingRealSec * 1000;
     router.push({
       pathname: '/workout/pose-analysis',
-      params: { sessionEndTime: String(endTimeRef.current) },
+      params: { sessionEndTime: String(sessionEndTime) },
     });
-  }, [router]);
+  }, [router, totalSec, realElapsedSec]);
 
   const progress = plannedSec > 0 ? remainingSec / plannedSec : 0;
 

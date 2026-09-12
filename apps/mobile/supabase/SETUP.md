@@ -5,21 +5,18 @@
 1. **SQL**:
    - 初回: `supabase/schema.sql` を Supabase ダッシュボード > SQL Editor に貼って Run
      （既存の `users` / `friendships` / `workout_logs` への差分適用。再実行しても安全）
-<<<<<<< HEAD
-   - 既に schema.sql 実行済みなら追加で `supabase/migration_02_avatar_emoji.sql` も Run
-     （アバター絵文字を `users` に持たせ、フレンド一覧にも表示。schema.sql 側にも反映済み）
-   - 続けて `supabase/migration_03_workout_menus.sql` も Run
-     （「メニューを選ぶ」画面用の `workout_menus` と、スクワット等のpose判定結果を
-     保存するための `workout_logs` への列追加。cv担当者のフォーム判定機能と対）
-=======
    - 既に schema.sql 実行済みなら追加で以下も Run（すべて schema.sql 側に反映済み・再実行可）
      - `supabase/migration_02_avatar_emoji.sql`（アバター絵文字を `users` に持たせフレンド一覧にも表示）
+     - `supabase/migration_03_workout_menus.sql`（「メニューを選ぶ」画面用の `workout_menus` と、
+       スクワット等のpose判定結果を保存するための `workout_logs` への列追加。cv担当者のフォーム判定機能と対）
      - `supabase/migration_03_home_stats.sql`（`workout_logs.duration_sec` 追加＋ホーム画面の実績 RPC `get_home_stats`）
+       ※ 上の `migration_03_workout_menus.sql` とは別の担当者が同じ番号で作成したものです。
+       ファイル名が衝突しているだけで内容は独立しているため、**両方**実行してください（順不同）。
+       今後03番を新たに作らないよう、次のマイグレーションは08以降の空き番号を使ってください。
      - `supabase/migration_04_friend_code.sql`（表示名の一意制約を撤廃＋`users.friend_code` 導入。フレンド申請はコードのみ）
      - `supabase/migration_05_friends_include_self.sql`（`get_friends_with_status` に自分自身の行も含める）
      - `supabase/migration_06_goal_roadmap.sql`（目標ロードマップの永続化。`goal_trees`/`goal_milestones`/`goal_tasks` ＋ `save_roadmap`/`get_current_roadmap`。※ Supabase 上には既に作成済みのはずだが、リポジトリに無かったため反映）
      - `supabase/migration_07_this_week_focus.sql`（ホーム画面の「今週の目標」用 RPC `get_this_week_focus`）
->>>>>>> main
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage

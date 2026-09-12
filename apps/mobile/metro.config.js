@@ -13,4 +13,15 @@ const cvRoot = path.resolve(repoRoot, 'cv');
 
 config.watchFolders = [...(config.watchFolders ?? []), cvRoot];
 
+// watchFoldersはファイルを「見つける」ことしか解決しない。
+// cv/pose 側のファイル（apps/mobile の外）から expo-speech のような
+// パッケージをimportすると、Metroは通常「ファイルのある場所から上の階層」
+// にしかnode_modulesを探しに行かないため、apps/mobile/node_modules（兄弟フォルダ）
+// を見つけられずに Unable to resolve module エラーになる。
+// nodeModulesPaths に明示的に追加し、常にここも探索対象にする。
+config.resolver.nodeModulesPaths = [
+  ...(config.resolver.nodeModulesPaths ?? []),
+  path.resolve(projectRoot, 'node_modules'),
+];
+
 module.exports = config;

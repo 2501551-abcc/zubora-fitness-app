@@ -9,6 +9,7 @@
  */
 
 import { DrumRollPicker, type DrumRollItem } from '@/components/workout/drum-roll-picker';
+import { MonoColors } from '@/constants/mono-theme';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
 import { tapImpact } from '@/lib/haptics';
 import { syncDailyReminder } from '@/lib/reminders';
@@ -18,24 +19,6 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-<<<<<<< HEAD
-
-// ★ 1. expo-notifications のインポート
-import * as Notifications from 'expo-notifications';
-
-// ★ 2. アプリ起動中（フォアグラウンド）でも通知をポップアップさせる設定
-//    expo-notifications 0.32 (Expo SDK 54) からハンドラの形が変わり、
-//    shouldShowAlert は shouldShowBanner / shouldShowList に分割された。
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-=======
->>>>>>> main
 
 /** 開いた瞬間から自動スタートまでの秒数 */
 const PREP_SECONDS = 15;
@@ -44,34 +27,6 @@ const DEFAULT_MINUTES = 15;
 
 const LEVELS: WorkoutLevel[] = ['easy', 'normal', 'hard'];
 
-<<<<<<< HEAD
-// ★ 3. 通知セット関数（修正版）
-const scheduleNextWorkoutNotification = async () => {
-  try {
-    // 既存の予約をクリア
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    // 10秒後に通知を予約
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '💖 今日もゆるっといこう！',
-        body: '10秒テスト完了！今日もサクッと動いてロードマップを進めよう✨',
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 10,
-        repeats: false,
-      },
-    });
-    console.log('✅ 通知を10秒後に予約しました！');
-  } catch (error) {
-    console.log('❌ 通知予約エラー:', error);
-  }
-};
-
-=======
->>>>>>> main
 export default function PrepareScreen() {
   const router = useRouter();
 
@@ -134,7 +89,7 @@ export default function PrepareScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.hello}>今日はどれくらい？</Text>
-        <Text style={styles.title}>回してサッと決めよう</Text>
+        <Text style={styles.title}>筋トレ時間を決めよう</Text>
       </View>
 
       {/* 15秒カウントダウンの案内 */}
@@ -181,7 +136,7 @@ export default function PrepareScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WorkoutColors.screenBg,
+    backgroundColor: MonoColors.screenBg,
     paddingHorizontal: 20,
     justifyContent: 'space-between',
   },
@@ -190,35 +145,35 @@ const styles = StyleSheet.create({
   },
   hello: {
     fontSize: 14,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
     marginTop: 4,
   },
   countdownPill: {
     alignSelf: 'center',
-    backgroundColor: WorkoutColors.mist,
+    backgroundColor: MonoColors.surfaceAlt,
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 18,
   },
   countdownText: {
     fontSize: 14,
-    color: WorkoutColors.ink,
+    color: MonoColors.inkSoft,
   },
   countdownNum: {
     fontSize: 18,
     fontWeight: '700',
-    color: WorkoutColors.primary,
+    color: MonoColors.ink,
   },
   drumWrap: {
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderRadius: WorkoutLayout.radiusCard,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
     paddingVertical: 8,
   },
   levelRow: {
@@ -230,32 +185,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
   },
   levelChipActive: {
-    backgroundColor: WorkoutColors.mist,
-    borderColor: WorkoutColors.soft,
+    backgroundColor: MonoColors.surfaceAlt,
+    borderColor: MonoColors.ink,
   },
   levelText: {
     fontSize: 15,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   levelTextActive: {
-    color: WorkoutColors.ink,
+    color: MonoColors.ink,
     fontWeight: '600',
   },
   startButton: {
-    backgroundColor: WorkoutColors.primary,
+    backgroundColor: MonoColors.ink,
     borderRadius: WorkoutLayout.radiusControl,
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: 'center',
     marginBottom: 8,
   },
   startText: {
     color: WorkoutColors.onAccent,
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '700',
   },
 });

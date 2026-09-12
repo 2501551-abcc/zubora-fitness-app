@@ -11,11 +11,7 @@
  */
 
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
-<<<<<<< HEAD
-import type { DurationOption, PoseAnalysisResult, WorkoutMenuItem, WorkoutResult } from '@/types/workout';
-=======
-import type { DurationOption, HomeStats, WorkoutResult } from '@/types/workout';
->>>>>>> main
+import type { DurationOption, HomeStats, PoseAnalysisResult, WorkoutMenuItem, WorkoutResult } from '@/types/workout';
 import { supabase } from '../supabase';
 
 /** ドラムロールに表示する時間の候補（分）。ずぼら向けに短い刻みも用意。 */
@@ -69,13 +65,8 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   }
 
   try {
-<<<<<<< HEAD
-    // menu_id は現状 UI に無いため null。AI選択メニューを保存する場合はここに追加。
-    // result の各項目（時間・強度・完走可否）を保存したくなったらカラム追加＋ここへ。
-=======
     // workout_logs は RLS 有効。created_at は DB 側 default now()（= 実施日時）。
     // menu_id は現状 UI に無いため未指定。強度・完走可否を残したくなったらカラム追加。
->>>>>>> main
     const { error } = await supabase.from('workout_logs').insert({
       user_id: user.id,
       duration_sec: Math.max(0, Math.round(result.completedSec)),
@@ -97,14 +88,6 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
     console.warn('[workoutService] ウィジェット更新をスキップ:', err);
   }
 }
-<<<<<<< HEAD
-
-/*export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
-  console.log('[workoutService] saveWorkoutSession (stub):', result);
-}
-*/
-=======
->>>>>>> main
 
 /**
  * ホーム画面の実績（連続記録 / 今週の合計）をまとめて取得。
