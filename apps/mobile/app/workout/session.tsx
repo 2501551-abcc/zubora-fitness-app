@@ -35,14 +35,23 @@ const TICK_MS = 200; // 表示更新の間隔（バーを滑らかに見せる�
 
 export default function WorkoutSessionScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ durationSec?: string; level?: string }>();
+  const params = useLocalSearchParams<{
+    durationSec?: string;
+    level?: string;
+    firstExercise?: string;
+  }>();
 
   // パラメータを安全にパース（不正値なら15分にフォールバック）
   const plannedSec = clampNumber(Number(params.durationSec), 60, 60 * 90, 15 * 60);
   const level = normalizeLevel(params.level);
+  // 目標ロードマップの今週のタスクがあれば、最初の1種目をそれに差し替える（prepare.tsx参照）
+  const firstExercise = params.firstExercise || undefined;
 
   // レベル×合計時間から一度だけ組み立てる（種目 → 休憩 → 種目 …、休憩込みの実時間座標）
-  const segments = useMemo(() => buildWorkoutSequence(plannedSec, level), [plannedSec, level]);
+  const segments = useMemo(
+    () => buildWorkoutSequence(plannedSec, level, firstExercise),
+    [plannedSec, level, firstExercise],
+  );
   const totalSec = segments.length > 0 ? segments[segments.length - 1].endSec : plannedSec;
 
   // realElapsedSec = 休憩も含めた実時間の経過（セグメント切り替えの基準）

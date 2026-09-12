@@ -761,7 +761,7 @@ as $$
     from active a
   ),
   chosen as (
-    select t.title, t.description, t.frequency_per_week, m.title as milestone_title
+    select t.title, t.description, t.frequency_per_week, t.workout_menu_tag, m.title as milestone_title
     from week_calc w
     join public.goal_milestones m on m.goal_id = w.id
     join public.goal_tasks t on t.milestone_id = m.id
@@ -777,7 +777,8 @@ as $$
     'milestone_title', c.milestone_title,
     'task_title', c.title,
     'task_description', c.description,
-    'frequency_per_week', c.frequency_per_week
+    'frequency_per_week', c.frequency_per_week,
+    'workout_menu_tag', c.workout_menu_tag
   ) end
   from week_calc w
   left join chosen c on true;

@@ -61,8 +61,15 @@ const MIN_SEGMENT_FRACTION = 0.4;
  * 種目 → 休憩 → 種目 … のセグメント列を組み立てる。
  * 休憩は種目の予算を消費しないため、セグメント全体の長さ（最後の endSec）は
  * plannedSec より休憩ぶんだけ長くなる。
+ *
+ * firstExerciseName を渡すと、最初の1本だけレベル別ローテーションの代わりに
+ * その名前を使う（目標ロードマップの「今週のタスク」を反映するため）。
  */
-export function buildWorkoutSequence(plannedSec: number, level: WorkoutLevel): WorkoutSegment[] {
+export function buildWorkoutSequence(
+  plannedSec: number,
+  level: WorkoutLevel,
+  firstExerciseName?: string,
+): WorkoutSegment[] {
   const { exercises, workSec, restSec } = LEVEL_CONFIG[level];
 
   let exerciseCount = Math.max(1, Math.ceil(plannedSec / workSec));
@@ -77,12 +84,8 @@ export function buildWorkoutSequence(plannedSec: number, level: WorkoutLevel): W
   let cursor = 0;
   for (let i = 0; i < exerciseCount; i += 1) {
     const dur = i === exerciseCount - 1 ? lastDur : workSec;
-    segments.push({
-      type: 'exercise',
-      name: exercises[i % exercises.length],
-      startSec: cursor,
-      endSec: cursor + dur,
-    });
+    const name = i === 0 && firstExerciseName ? firstExerciseName : exercises[i % exercises.length];
+    segments.push({ type: 'exercise', name, startSec: cursor, endSec: cursor + dur });
     cursor += dur;
 
     if (i < exerciseCount - 1) {

@@ -99,6 +99,7 @@ export async function fetchThisWeekFocus(): Promise<WeekFocus | null> {
       task_title: string | null;
       task_description: string | null;
       frequency_per_week: number | null;
+      workout_menu_tag?: string | null;
     };
     return {
       roadmapTitle: row.roadmap_title,
@@ -109,6 +110,7 @@ export async function fetchThisWeekFocus(): Promise<WeekFocus | null> {
       taskTitle: row.task_title,
       taskDescription: row.task_description,
       frequencyPerWeek: row.frequency_per_week,
+      workoutMenuTag: row.workout_menu_tag ?? null,
     };
   } catch (err) {
     console.warn('[goalService] 今週の目標の取得に失敗しました:', err);
