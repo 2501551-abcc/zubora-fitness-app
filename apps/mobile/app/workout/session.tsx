@@ -162,15 +162,17 @@ export default function WorkoutSessionScreen() {
       {/* ヘッダー */}
       <View style={styles.header}>
         <Text style={styles.levelTag}>{LEVEL_LABELS[level]}</Text>
-        <Pressable
-          style={({ pressed }) => [styles.squatButton, pressed && styles.squatButtonPressed]}
-          onPress={startSquat}>
-          <Feather name="camera" size={13} color={WorkoutColors.deep} />
-          <Text style={styles.squatButtonText}>スクワット</Text>
-        </Pressable>
-        <Pressable onPress={quit} hitSlop={12}>
-          <Text style={styles.close}>✕</Text>
-        </Pressable>
+        <View style={styles.headerRight}>
+          <Pressable
+            style={({ pressed }) => [styles.squatButton, pressed && styles.squatButtonPressed]}
+            onPress={startSquat}>
+            <Feather name="camera" size={13} color={WorkoutColors.deep} />
+            <Text style={styles.squatButtonText}>スクワット</Text>
+          </Pressable>
+          <Pressable onPress={quit} hitSlop={12}>
+            <Text style={styles.close}>✕</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* 今の種目 / 休憩 + そのセグメントの残り時間 */}
@@ -241,6 +243,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 8,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   levelTag: {
     color: WorkoutColors.soft,
