@@ -94,6 +94,8 @@ export interface WeekFocus {
   taskTitle: string | null;
   taskDescription: string | null;
   frequencyPerWeek: number | null;
+  /** このタスクの推奨メニュー（workout-menu-tags.ts の tag）。無ければ null */
+  workoutMenuTag: string | null;
 }
 
 /* ========== 質問フローの回答（画面内の作業用ステート） ========== */

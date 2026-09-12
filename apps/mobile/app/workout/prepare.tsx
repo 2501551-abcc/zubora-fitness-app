@@ -6,13 +6,18 @@
  *  - その15秒のあいだにドラムロールで筋トレ時間を決めてもらう。
  *  - 0秒になったら今選ばれている時間で自動スタート（ずぼら向け）。
  *  - スタートボタンで即開始も可能。
+ *  - 目標ロードマップの「今週のタスク」があれば、最初の1種目をそのメニューに
+ *    差し替える（fetchThisWeekFocus）。取得は画面を開いた瞬間に裏で始めるので、
+ *    自動スタートの体感速度は変わらない。取得できなければ通常のローテーション。
  */
 
 import { DrumRollPicker, type DrumRollItem } from '@/components/workout/drum-roll-picker';
 import { MonoColors } from '@/constants/mono-theme';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
+import { WORKOUT_MENU_TAGS } from '@/constants/workout-menu-tags';
 import { tapImpact } from '@/lib/haptics';
 import { syncDailyReminder } from '@/lib/reminders';
+import { fetchThisWeekFocus } from '@/services/goalService';
 import { getDurationOptions } from '@/services/workoutService';
 import { LEVEL_LABELS, type WorkoutLevel } from '@/types/workout';
 import { useRouter } from 'expo-router';
@@ -47,6 +52,24 @@ export default function PrepareScreen() {
 
   const startedRef = useRef(false);
 
+  // 今週のタスクの推奨メニュー（workout_menu_tag → 表示名）。画面を開いた瞬間に
+  // 裏で取れるだけ取っておき、開始時にはその時点の結果を使う（無ければ通常通り）。
+  const firstExerciseRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    fetchThisWeekFocus()
+      .then((focus) => {
+        if (!alive || !focus?.workoutMenuTag) return;
+        firstExerciseRef.current = WORKOUT_MENU_TAGS.find(
+          (t) => t.tag === focus.workoutMenuTag,
+        )?.label;
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // 筋トレ画面へ遷移（自動 / 手動どちらからも呼ばれる。二重遷移をガード）
   const goToWorkout = useCallback(
     (manual: boolean) => {
@@ -62,6 +85,7 @@ export default function PrepareScreen() {
         params: {
           durationSec: String(minutesRef.current * 60),
           level: levelRef.current,
+          ...(firstExerciseRef.current ? { firstExercise: firstExerciseRef.current } : {}),
         },
       });
     },

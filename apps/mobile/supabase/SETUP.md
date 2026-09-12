@@ -14,6 +14,7 @@
      - `supabase/migration_07_this_week_focus.sql`（ホーム画面の「今週の目標」用 RPC `get_this_week_focus`）
      - `supabase/migration_08_friends_week_minutes.sql`（`get_friends_with_status` にフレンドの今週の筋トレ合計時間 `week_minutes` を追加）
      - `supabase/migration_09_goal_input_answers.sql`（`goal_trees.input_answers` を追加。前提10問の回答一式を `save_roadmap`/`get_current_roadmap` で読み書き）
+     - `supabase/migration_10_this_week_focus_tag.sql`（`get_this_week_focus` の返り値に `workout_menu_tag` を追加。「筋トレを始める」に今週のメニューを反映するため）
 2. **パッケージ**: 導入済み
    ```bash
    npx expo install @react-native-async-storage/async-storage
