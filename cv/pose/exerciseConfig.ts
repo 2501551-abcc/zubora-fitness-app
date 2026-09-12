@@ -74,9 +74,9 @@ const SQUAT_PRAISE_TEXT = '素晴らしいフォームです！';
 
 // --- 判定の厳しさはここで一括管理する ---
 const TORSO_MIN_SIM = 0.5;
-const THIGH_MIN_SIM = 0.4;
-const KNEE_TOO_SHALLOW_ABOVE = 90;
-const KNEE_TOO_DEEP_BELOW = 55;
+const THIGH_MIN_SIM = 0.3;
+const KNEE_TOO_SHALLOW_ABOVE = 110;
+const KNEE_TOO_DEEP_BELOW = 45;
 const KNEE_FORWARD_MAX_RATIO = 0.25;
 
 // MediaPipe Pose（33点）の主要インデックス
