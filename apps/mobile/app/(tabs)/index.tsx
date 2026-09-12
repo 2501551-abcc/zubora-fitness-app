@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   focusLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: MonoColors.accent,
+    color: MonoColors.successSoft,
     letterSpacing: 0.5,
   },
   focusTitle: {
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   focusProgressFill: {
     height: '100%',
     borderRadius: 4,
-    backgroundColor: MonoColors.accent,
+    backgroundColor: MonoColors.successSoft,
   },
 
   goalLink: {
