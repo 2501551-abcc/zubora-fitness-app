@@ -62,7 +62,7 @@ export default function PrepareScreen() {
         if (!alive || !focus?.workoutMenuTag) return;
         firstExerciseRef.current = WORKOUT_MENU_TAGS.find(
           (t) => t.tag === focus.workoutMenuTag,
-        )?.label;
+        )?.exerciseName;
       })
       .catch(() => {});
     return () => {

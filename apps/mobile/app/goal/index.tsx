@@ -238,14 +238,24 @@ export default function GoalRoadmapScreen() {
                   </View>
                   {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
 
-                  {m.tasks.map((t) => {
+                  {m.tasks.map((t, ti) => {
                     const tStatus = taskStatus(t);
+                    // タスクが担当する週の範囲＝次のタスクの前週まで（最後のタスクは中目標の終わりまで）。
+                    // タスクは各中目標に1〜3個しかないため、間の週はこの範囲に含めて表示する。
+                    const rangeEnd =
+                      ti < m.tasks.length - 1
+                        ? Math.max(t.week_number, m.tasks[ti + 1].week_number - 1)
+                        : milestoneRanges[i].end;
+                    const weekLabel =
+                      rangeEnd > t.week_number
+                        ? `WEEK ${t.week_number}〜${rangeEnd}`
+                        : `WEEK ${t.week_number}`;
                     return (
                       <View
                         key={t.task_id}
                         style={[styles.task, tStatus === 'done' && styles.taskDone]}>
                         <View style={styles.taskTextWrap}>
-                          <Text style={styles.taskWeek}>WEEK {t.week_number}</Text>
+                          <Text style={styles.taskWeek}>{weekLabel}</Text>
                           <Text
                             style={[
                               styles.taskTitle,
