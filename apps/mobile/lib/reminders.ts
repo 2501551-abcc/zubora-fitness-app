@@ -97,8 +97,8 @@ export async function syncDailyReminder(): Promise<void> {
     await Notifications.scheduleNotificationAsync({
       identifier: DAILY_REMINDER_ID,
       content: {
-        title: '今日もゆるっといこう 💪',
-        body: '筋トレの時間だよ。1分でもえらい！',
+        title: '今日も頑張ろう 💪',
+        body: '筋トレの時間だよ！筋トレしようよ！',
         sound: true,
       },
       trigger: {
