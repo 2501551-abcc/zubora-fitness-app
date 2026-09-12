@@ -27,16 +27,18 @@ import { Landmark, PoseFormEvaluator, RepLog } from '../../../../cv/pose/PoseFor
 import { EXERCISE_CONFIGS } from '../../../../cv/pose/exerciseConfig';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Camera } from 'react-native-vision-camera';
 import { Delegate, MediapipeCamera, RunningMode, usePoseDetection } from 'react-native-mediapipe';
 
-
-import { Platform, View, Text, Pressable } from 'react-native';
-
-// ...
+const POSE_MODEL = 'pose_landmarker_lite.task';
+// 目標回数を決めない運用にしたので、事実上「到達しない」大きな値にして
+// PoseFormEvaluator側の自動終了（10回で切り上げる機能）を無効化する。
+const NO_TARGET_REPS = 999999;
 
 export default function PoseAnalysisScreen() {
+  const router = useRouter();
+
   // Webブラウザで動かしている時は、カメラを起動せずにダミーUIを表示する
   if (Platform.OS === 'web') {
     return (
@@ -47,24 +49,13 @@ export default function PoseAnalysisScreen() {
         {/* 運動完了などのテスト用ボタンを作っておくと便利！ */}
         <Pressable 
           style={{ marginTop: 20, padding: 12, backgroundColor: '#4A90E2', borderRadius: 8 }}
-          onPress={() => /* 完了処理や画面遷移のテスト */ {}}>
-          <Text style={{ color: '#fff' }}>スクワット完了テスト</Text>
+          onPress={() => router.back()}>
+          <Text style={{ color: '#fff' }}>セッションに戻る（テスト）</Text>
         </Pressable>
       </View>
     );
   }
 
-  // 以下、本番のカメラ処理コード...
-}
-
-
-const POSE_MODEL = 'pose_landmarker_full.task';
-// 目標回数を決めない運用にしたので、事実上「到達しない」大きな値にして
-// PoseFormEvaluator側の自動終了（10回で切り上げる機能）を無効化する。
-const NO_TARGET_REPS = 999999;
-
-export default function PoseAnalysisScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams<{
     menuId?: string;
     exerciseKey?: string;
@@ -204,7 +195,7 @@ export default function PoseAnalysisScreen() {
       <View style={styles.summaryContainer}>
         <Text style={styles.summaryTitle}>お疲れさまでした！</Text>
         <Text style={styles.summarySub}>
-          {displayName}　{sessionLog.length}回中 {goodCount}回、正しいフォームでした
+          {displayName} {sessionLog.length}回中 {goodCount}回、正しいフォームでした
         </Text>
         <ScrollView style={styles.summaryList}>
           {sessionLog.map((rep) => (

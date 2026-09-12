@@ -1,4 +1,32 @@
+import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
+
+// Web環境でエラーになるのを防ぐためのダミー（モック）ラッパー
+const safeSpeech = {
+  speak: (text: string, options?: any) => {
+    if (Platform.OS === 'web') {
+      // ブラウザ環境ではコンソールに出力（必要ならブラウザ標準の音声合成を使用）
+      console.log('[Voice Feedback]:', text);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        const uttr = new SpeechSynthesisUtterance(text);
+        uttr.lang = 'ja-JP';
+        window.speechSynthesis.speak(uttr);
+      }
+    } else {
+      Speech.speak(text, options);
+    }
+  },
+  stop: () => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    } else {
+      Speech.stop();
+    }
+  },
+};
+
 import { ExerciseConfig, Vector2D } from './exerciseConfig';
 
 export interface Landmark {
@@ -109,7 +137,7 @@ export class PoseFormEvaluator {
       this.isSpeaking = false;
     };
 
-    Speech.speak(text, {
+    safeSpeech.speak(text, {
       language: 'ja-JP',
       rate: 1.0,
       onDone: resetSpeaking,

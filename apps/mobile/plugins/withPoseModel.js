@@ -2,7 +2,7 @@ const { withXcodeProject, withDangerousMod, IOSConfig } = require('@expo/config-
 const fs = require('fs');
 const path = require('path');
 
-const MODEL_FILENAME = 'pose_landmarker_full.task';
+const MODEL_FILENAME = 'pose_landmarker_lite.task';
 
 // モデル本体は cv/pose（cv担当者の管理フォルダ）に置かれている。
 // apps/mobile 側に複製を持たず、prebuild時にそこから直接コピーする。
