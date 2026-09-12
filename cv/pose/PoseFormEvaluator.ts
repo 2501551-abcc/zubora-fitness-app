@@ -244,7 +244,8 @@ export class PoseFormEvaluator {
         const avgSimilarity =
           Object.values(jointSimilarities).reduce((a, b) => a + b, 0) / joints.length;
 
-        const curvedSimilarity = Math.sqrt(Math.sqrt(Math.max(0, avgSimilarity)));
+        // 4乗根から5乗根に変更（さらに強く底上げする）
+        const curvedSimilarity = Math.pow(Math.max(0, avgSimilarity), 1 / 5);
         let score = Math.max(0, Math.min(100, Math.floor(curvedSimilarity * 100)));
 
         const kneeAngle = this.calculateAngle(
