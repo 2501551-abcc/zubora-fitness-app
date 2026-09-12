@@ -23,27 +23,63 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { goalDraft } from '@/lib/goal-draft';
 import { tapImpact } from '@/lib/haptics';
-import { fetchCurrentRoadmap, saveRoadmap } from '@/services/goalService';
-import type { Roadmap } from '@/types/goal';
+import { fetchCurrentRoadmap, fetchThisWeekFocus, saveRoadmap } from '@/services/goalService';
+import { fetchHomeStats } from '@/services/workoutService';
+import type { Roadmap, RoadmapTask, WeekFocus } from '@/types/goal';
+
+type NodeStatus = 'done' | 'active' | 'upcoming';
+
+// 「！」「？」「。」や絵文字の直後で改行する。
+// AIが生成するタイトルは文の区切りに句読点・絵文字を使うことが多く、そこを狙って
+// 明示的に改行しておくと、自動折り返しが単語の途中（例:「自重」）で起きにくくなる。
+const TITLE_BREAK_PATTERN = /([！？。]|[\u{2600}-\u{27BF}\u{1F000}-\u{1FFFF}])/gu;
+
+function withTitleBreaks(title: string): string {
+  return title
+    .replace(TITLE_BREAK_PATTERN, '$1\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+}
 
 export default function GoalRoadmapScreen() {
   const router = useRouter();
   const [roadmap, setRoadmap] = useState<Roadmap | null>(() => goalDraft.getRoadmap());
   const [loading, setLoading] = useState(roadmap === null);
   const [starting, setStarting] = useState(false);
+  // 保存済みロードマップを取得したときだけ、あわせて「今どの週か」「今週何回やったか」を取得する
+  // （下書き＝未保存の段階では進捗の概念がないので null / 0 のまま）。
+  const [focus, setFocus] = useState<WeekFocus | null>(null);
+  const [weekWorkouts, setWeekWorkouts] = useState(0);
+  const [showRawInput, setShowRawInput] = useState(false);
 
   useEffect(() => {
     if (roadmap) return;
     let alive = true;
-    fetchCurrentRoadmap().then((r) => {
-      if (!alive) return;
-      setRoadmap(r);
-      setLoading(false);
-    });
+    Promise.all([fetchCurrentRoadmap(), fetchThisWeekFocus(), fetchHomeStats()]).then(
+      ([r, f, s]) => {
+        if (!alive) return;
+        setRoadmap(r);
+        setFocus(f);
+        setWeekWorkouts(s.weekWorkouts);
+        setLoading(false);
+      },
+    );
     return () => {
       alive = false;
     };
   }, [roadmap]);
+
+  // 下書き(goalDraft)は「保存する/作り直す」を押さずに画面を離れても消えず、
+  // 次にこの画面を開いたときにまた同じ下書きが表示され続けてしまう
+  // （＝保存済みデータや進捗が一切取得されず、完了表示も更新されない原因）。
+  // この画面を離れるタイミングで必ず片付けて、次回は必ず最新を取り直させる。
+  useEffect(() => {
+    return () => {
+      goalDraft.reset();
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -64,6 +100,43 @@ export default function GoalRoadmapScreen() {
       </SafeAreaView>
     );
   }
+
+  // milestone.period_weeks を順に積み上げて、各中目標が何週目〜何週目かを出す
+  // （task.week_number はロードマップ全体を通しての絶対週数なので、これと比較する）。
+  let cursorWeek = 0;
+  const milestoneRanges = roadmap.milestones.map((m) => {
+    const start = cursorWeek + 1;
+    cursorWeek += m.period_weeks;
+    return { start, end: cursorWeek };
+  });
+
+  const taskStatus = (t: RoadmapTask): NodeStatus => {
+    if (!focus) return 'upcoming';
+    if (focus.isComplete || t.week_number < focus.currentWeek) return 'done';
+    if (t.week_number === focus.currentWeek) {
+      // 今週分は、週が変わるのを待たずに実施回数が目安に達した時点で完了扱いにする
+      return weekWorkouts >= t.frequency_per_week ? 'done' : 'active';
+    }
+    return 'upcoming';
+  };
+
+  const milestoneStatus = (
+    idx: number,
+    range: { start: number; end: number },
+    tasks: RoadmapTask[],
+  ): NodeStatus => {
+    if (!focus) return idx === 0 ? 'active' : 'upcoming';
+    if (focus.isComplete || focus.currentWeek > range.end) return 'done';
+    if (focus.currentWeek >= range.start) {
+      // 中目標の最終週なら、その週のタスクが完了した時点で中目標ごと完了扱いにする
+      if (focus.currentWeek === range.end) {
+        const currentTask = tasks.find((t) => t.week_number === focus.currentWeek);
+        if (currentTask && taskStatus(currentTask) === 'done') return 'done';
+      }
+      return 'active';
+    }
+    return 'upcoming';
+  };
 
   const regenerate = () => {
     tapImpact();
@@ -103,37 +176,92 @@ export default function GoalRoadmapScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.eyebrow}>{MonoGlyph.sparkle} あなたのロードマップ</Text>
-        <Text style={styles.title}>{roadmap.title}</Text>
-        <Text style={styles.rawInput}>“{roadmap.user_input_raw}” から</Text>
+        <Text style={styles.title} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {withTitleBreaks(roadmap.title)}
+        </Text>
 
         <View style={styles.tree}>
           {roadmap.milestones.map((m, i) => {
-            const isFirst = i === 0;
+            const status = milestoneStatus(i, milestoneRanges[i], m.tasks);
             return (
               <View key={m.milestone_id} style={styles.node}>
-                <View style={[styles.dot, isFirst ? styles.dotActive : styles.dotFuture]} />
-                <View style={[styles.card, !isFirst && styles.cardFuture]}>
+                <View
+                  style={[
+                    styles.dot,
+                    status === 'done' && styles.dotDone,
+                    status === 'active' && styles.dotActive,
+                    status === 'upcoming' && styles.dotFuture,
+                  ]}>
+                  {status === 'done' && <Feather name="check" size={9} color={MonoColors.onInk} />}
+                </View>
+                <View
+                  style={[
+                    styles.card,
+                    status === 'done' && styles.cardDone,
+                    status === 'upcoming' && styles.cardFuture,
+                  ]}>
                   <View style={styles.cardHead}>
-                    <Text style={styles.milestoneTitle}>{m.title}</Text>
+                    <View style={styles.milestoneTitleRow}>
+                      <Text style={styles.milestoneTitle}>{m.title}</Text>
+                      {status === 'done' && (
+                        <View style={styles.doneBadge}>
+                          <Text style={styles.doneBadgeText}>完了！</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={styles.weeks}>{m.period_weeks}週</Text>
                   </View>
                   {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
 
-                  {m.tasks.map((t) => (
-                    <View key={t.task_id} style={styles.task}>
-                      <View style={styles.taskTextWrap}>
-                        <Text style={styles.taskWeek}>WEEK {t.week_number}</Text>
-                        <Text style={styles.taskTitle}>{t.title}</Text>
+                  {m.tasks.map((t) => {
+                    const tStatus = taskStatus(t);
+                    return (
+                      <View
+                        key={t.task_id}
+                        style={[styles.task, tStatus === 'done' && styles.taskDone]}>
+                        <View style={styles.taskTextWrap}>
+                          <Text style={styles.taskWeek}>WEEK {t.week_number}</Text>
+                          <Text
+                            style={[
+                              styles.taskTitle,
+                              tStatus === 'done' && styles.taskTitleDone,
+                            ]}>
+                            {t.title}
+                          </Text>
+                        </View>
+                        {tStatus === 'done' ? (
+                          <View style={styles.taskDoneTag}>
+                            <Feather name="check" size={11} color={MonoColors.success} />
+                            <Text style={styles.taskDoneTagText}>達成</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.freq}>週{t.frequency_per_week}回</Text>
+                        )}
                       </View>
-                      <Text style={styles.freq}>週{t.frequency_per_week}回</Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               </View>
             );
           })}
         </View>
+
+        <Pressable
+          style={styles.rawInputToggle}
+          onPress={() => setShowRawInput((v) => !v)}
+          hitSlop={8}>
+          <Text style={styles.rawInputToggleText}>
+            {showRawInput ? '入力した内容を閉じる' : '入力した内容を見る'}
+          </Text>
+          <Feather
+            name={showRawInput ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={MonoColors.textMuted}
+          />
+        </Pressable>
+        {showRawInput && (
+          <Text style={styles.rawInput}>{roadmap.user_input_raw}</Text>
+        )}
 
         <Pressable
           style={[styles.primaryButton, starting && styles.primaryButtonDisabled]}
@@ -184,15 +312,32 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 12, color: MonoColors.textSecondary },
   title: {
     fontSize: 22,
+    lineHeight: 30,
     fontWeight: '700',
     color: MonoColors.ink,
     marginTop: 6,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  rawInputToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 14,
+    marginTop: 20,
+  },
+  rawInputToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: MonoColors.textMuted,
   },
   rawInput: {
     fontSize: 12,
     color: MonoColors.textMuted,
-    marginTop: 4,
-    marginBottom: 24,
+    marginTop: -4,
+    marginBottom: 4,
+    textAlign: 'left',
   },
 
   tree: {
@@ -212,9 +357,12 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     borderWidth: 3,
     borderColor: MonoColors.screenBg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dotActive: { backgroundColor: MonoColors.ink },
   dotFuture: { backgroundColor: MonoColors.border },
+  dotDone: { backgroundColor: MonoColors.success },
 
   card: {
     backgroundColor: MonoColors.surface,
@@ -224,16 +372,37 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   cardFuture: { opacity: 0.75 },
+  cardDone: {
+    backgroundColor: MonoColors.successTint,
+    borderColor: MonoColors.success,
+  },
   cardHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
+    alignItems: 'center',
+  },
+  milestoneTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   milestoneTitle: {
-    flex: 1,
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: '700',
     color: MonoColors.ink,
+  },
+  doneBadge: {
+    backgroundColor: MonoColors.success,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: MonoLayout.radiusPill,
+  },
+  doneBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: MonoColors.onInk,
   },
   weeks: { fontSize: 11, color: MonoColors.textMuted, marginLeft: 8 },
   desc: {
@@ -252,9 +421,13 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 12,
   },
+  taskDone: {
+    backgroundColor: MonoColors.successTint,
+  },
   taskTextWrap: { flex: 1 },
   taskWeek: { fontSize: 11, color: MonoColors.textMuted },
   taskTitle: { fontSize: 13, color: MonoColors.ink, marginTop: 2 },
+  taskTitleDone: { color: MonoColors.textSecondary },
   freq: {
     fontSize: 11,
     color: MonoColors.inkSoft,
@@ -264,6 +437,22 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: MonoLayout.radiusPill,
     marginLeft: 8,
+  },
+  taskDoneTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: MonoColors.success,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: MonoLayout.radiusPill,
+    marginLeft: 8,
+  },
+  taskDoneTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: MonoColors.success,
   },
 
   primaryButton: {

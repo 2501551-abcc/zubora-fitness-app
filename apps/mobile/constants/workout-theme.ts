@@ -2,6 +2,9 @@
  * アプリ全体の配色・寸法トークン（明るいティール基調）。
  * 色を変えたいときは基本ここだけ触れば全画面に反映されます。
  * ※ファイル名は歴史的に workout-theme のままですが、アプリ全体で参照しています。
+ * ※タイマー画面（session.tsx）はこのティール基調のままでOKという判断。
+ *   準備画面・サマリー画面（prepare.tsx / summary.tsx / drum-roll-picker.tsx）は
+ *   他画面と合わせて白黒にしたいので、それらのファイル内で MonoColors を直接使っている。
  */
 
 export const WorkoutColors = {
