@@ -27,7 +27,7 @@ const safeSpeech = {
   },
 };
 
-import { ExerciseConfig, Vector2D } from './exerciseConfig';
+import { ExerciseConfig, SideLandmarks, Vector2D } from './exerciseConfig';
 
 export interface Landmark {
   x: number;
@@ -53,9 +53,10 @@ export interface FrameResult {
 }
 
 type Phase = 'init' | 'checking_visibility' | 'checking_direction' | 'ready' | 'finished';
+type Side = 'left' | 'right';
 
 const SMOOTHING_ALPHA = 0.4;
-const NG_SCORE_CAP = 75;
+const NG_SCORE_CAP = 80;
 
 export class PoseFormEvaluator {
   private config: ExerciseConfig;
@@ -64,6 +65,10 @@ export class PoseFormEvaluator {
   private deepestY = 0.0;
   private lastRepAt = 0;
   private smoothed: Landmark[] = [];
+
+  // 左右どちらの側を採点に使っているか。'ready'になるまでは毎フレーム判定し、
+  // 一度readyになったら次にフレームアウトするまで固定する（途中でブレないように）
+  private activeSide: Side | null = null;
 
   // 一度READYになった後、完全にフレームアウトするまでは
   // 「全身を確認しました」を再度読み上げない
@@ -103,6 +108,11 @@ export class PoseFormEvaluator {
     return dot / (n1 * n2);
   }
 
+  // 左右どちらの向きでも同じ理想ベクトルで比較できるよう、xは絶対値にしてから比較する
+  private directionAgnosticSimilarity(v: Vector2D, ideal: Vector2D): number {
+    return this.cosineSimilarity({ x: Math.abs(v.x), y: v.y }, ideal);
+  }
+
   private calculateAngle(hip: Landmark, knee: Landmark, ankle: Landmark): number {
     const v1 = { x: hip.x - knee.x, y: hip.y - knee.y };
     const v2 = { x: ankle.x - knee.x, y: ankle.y - knee.y };
@@ -117,6 +127,10 @@ export class PoseFormEvaluator {
 
   private distance(a: Landmark, b: Landmark): number {
     return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  private sideIndices(side: SideLandmarks): number[] {
+    return [side.shoulder, side.hip, side.knee, side.ankle, side.toe];
   }
 
   /**
@@ -137,9 +151,11 @@ export class PoseFormEvaluator {
       this.isSpeaking = false;
     };
 
+    // rate: 1.0が標準速度。読み上げが長いとisSpeakingガードで
+    // 次のアドバイスが取りこぼされやすくなるため、少し速めにしている。
     safeSpeech.speak(text, {
       language: 'ja-JP',
-      rate: 1.0,
+      rate: 1.4,
       onDone: resetSpeaking,
       onStopped: resetSpeaking,
       onError: resetSpeaking,
@@ -150,48 +166,61 @@ export class PoseFormEvaluator {
     if (this.phase === 'finished') return;
 
     const {
-      visibilityCheckpoints, directionCheck, depthLandmarkIdx,
+      sideLandmarks, minVisibilityMargin, noSideInstructionText, depthRole,
       standingYThreshold, startDelta, minRepDepthDelta, riseDelta, cooldownMs,
-      joints, angleCheck, kneeOverToeCheck, getAdvice,
+      joints, angleCheck, getAdvice,
       praiseText, targetGoodReps, completionText,
     } = this.config;
 
-    // --- ステップ1: 全身が映っているか（ヒステリシス付き） ---
+    // --- ステップ1: 左右どちらかの側が、全身映っていると言える程度に見えているか ---
     const wasVisible = this.phase !== 'checking_visibility' && this.phase !== 'init';
     const enterThreshold = 0.6;
     const exitThreshold = 0.4;
     const requiredThreshold = wasVisible ? exitThreshold : enterThreshold;
 
-    const fullBodyVisible = visibilityCheckpoints.every(
-      (idx) => (rawLandmarks[idx]?.visibility ?? 0) > requiredThreshold
-    );
+    const sideRoughlyVisible = (side: SideLandmarks) =>
+      (rawLandmarks[side.shoulder]?.visibility ?? 0) > requiredThreshold &&
+      (rawLandmarks[side.ankle]?.visibility ?? 0) > requiredThreshold;
+
+    const fullBodyVisible =
+      sideRoughlyVisible(sideLandmarks.left) || sideRoughlyVisible(sideLandmarks.right);
 
     if (!fullBodyVisible) {
       if (this.phase !== 'checking_visibility') {
         this.phase = 'checking_visibility';
         this.smoothed = [];
+        this.activeSide = null;
+        // 完全にフレームアウトしたので、次にREADYになったら改めて知らせる
+        this.hasAnnouncedReady = false;
         onUpdate({ advice: '全身をカメラに映してください', isReady: false });
       }
       return;
     }
 
-    // --- ステップ2: 向き ---
-    const facingAvg = this.avgVisibility(rawLandmarks, directionCheck.facingSideIndices);
-    const awayAvg = this.avgVisibility(rawLandmarks, directionCheck.awaySideIndices);
-    const correctDirection = facingAvg - awayAvg > directionCheck.minVisibilityMargin;
+    // --- ステップ2: 左右どちらの側を採点に使うか自動判定 ---
+    // 一度readyになったら、途中でブレないよう毎フレームは判定し直さない
+    if (this.phase !== 'ready') {
+      const leftAvg = this.avgVisibility(rawLandmarks, this.sideIndices(sideLandmarks.left));
+      const rightAvg = this.avgVisibility(rawLandmarks, this.sideIndices(sideLandmarks.right));
+      const diff = leftAvg - rightAvg;
 
-    if (!correctDirection) {
-      if (this.phase !== 'checking_direction') {
-        this.phase = 'checking_direction';
-        this.speakAdvice(directionCheck.instructionText);
-        onUpdate({ advice: directionCheck.instructionText, isReady: false });
+      if (Math.abs(diff) <= minVisibilityMargin) {
+        // 正面すぎる、あるいはどちらの側かまだ判別できない
+        if (this.phase !== 'checking_direction') {
+          this.phase = 'checking_direction';
+          this.speakAdvice(noSideInstructionText);
+          onUpdate({ advice: noSideInstructionText, isReady: false });
+        }
+        return;
       }
-      return;
+
+      this.activeSide = diff > 0 ? 'left' : 'right';
     }
 
+    if (!this.activeSide) return; // 型ガード（実際には起こらない）
+    const L = sideLandmarks[this.activeSide];
+
     // --- ステップ3: READY ---
-    // 向きチェックだけで一時的にNOT READYになった場合は、
-    // 「全身を確認しました」を再度読み上げない（hasAnnouncedReadyが立っていれば無視）
     if (this.phase !== 'ready') {
       this.phase = 'ready';
       if (!this.hasAnnouncedReady) {
@@ -202,7 +231,7 @@ export class PoseFormEvaluator {
     }
 
     const landmarks = this.smoothLandmarks(rawLandmarks);
-    const depthY = landmarks[depthLandmarkIdx].y;
+    const depthY = landmarks[L[depthRole]].y;
 
     const now = Date.now();
     const inCooldown = now - this.lastRepAt < cooldownMs;
@@ -223,12 +252,15 @@ export class PoseFormEvaluator {
         }
 
         const jointSimilarities: Record<string, number> = {};
+        const jointAngles: Record<string, number> = {};
         joints.forEach((j) => {
           const v = {
-            x: landmarks[j.toIdx].x - landmarks[j.fromIdx].x,
-            y: landmarks[j.toIdx].y - landmarks[j.fromIdx].y,
+            x: landmarks[L[j.to]].x - landmarks[L[j.from]].x,
+            y: landmarks[L[j.to]].y - landmarks[L[j.from]].y,
           };
-          jointSimilarities[j.id] = this.cosineSimilarity(v, j.ideal);
+          jointSimilarities[j.id] = this.directionAgnosticSimilarity(v, j.ideal);
+          // 床(水平)からの角度。0°=水平(床と平行)、90°=垂直。左右どちらの向きでも同じ値になる。
+          jointAngles[j.id] = Math.abs(Math.atan2(Math.abs(v.y), Math.abs(v.x)) * (180 / Math.PI));
         });
         const avgSimilarity =
           Object.values(jointSimilarities).reduce((a, b) => a + b, 0) / joints.length;
@@ -239,22 +271,25 @@ export class PoseFormEvaluator {
         let score = Math.max(0, Math.min(100, Math.floor(curvedSimilarity * 100)));
 
         const kneeAngle = this.calculateAngle(
-          landmarks[angleCheck.hipIdx],
-          landmarks[angleCheck.kneeIdx],
-          landmarks[angleCheck.ankleIdx]
+          landmarks[L[angleCheck.hip]],
+          landmarks[L[angleCheck.knee]],
+          landmarks[L[angleCheck.ankle]]
         );
 
-        const scaleLength = this.distance(
-          landmarks[kneeOverToeCheck.scaleFromIdx],
-          landmarks[kneeOverToeCheck.scaleToIdx]
-        );
+        // 膝つま先チェック: 股関節→膝のベクトルの向き（x符号）を「前方向」の基準にして、
+        // 左向き/右向きどちらでも「膝が前に出過ぎ」を同じ意味で判定できるようにする
+        const hipToKnee = {
+          x: landmarks[L.knee].x - landmarks[L.hip].x,
+          y: landmarks[L.knee].y - landmarks[L.hip].y,
+        };
+        const forwardSign = hipToKnee.x >= 0 ? 1 : -1;
+        const scaleLength = this.distance(landmarks[L.knee], landmarks[L.ankle]);
         const kneeForwardRatio =
           scaleLength > 0
-            ? (landmarks[kneeOverToeCheck.kneeIdx].x - landmarks[kneeOverToeCheck.toeIdx].x) /
-              scaleLength
+            ? (forwardSign * (landmarks[L.knee].x - landmarks[L.toe].x)) / scaleLength
             : 0;
 
-        const advice = getAdvice({ kneeAngle, jointSimilarities, kneeForwardRatio });
+        const advice = getAdvice({ kneeAngle, jointSimilarities, jointAngles, kneeForwardRatio });
         const isGoodForm = advice === praiseText;
 
         if (!isGoodForm) score = Math.min(score, NG_SCORE_CAP);
