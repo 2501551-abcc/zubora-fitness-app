@@ -51,19 +51,19 @@ const LEVEL_CONFIG: Record<WorkoutLevel, LevelConfig> = {
 };
 
 /**
- * 最後の1本が本来の長さに対してこの割合未満しかない場合は追加せず、
- * 1本減らしてその分を最後の種目に吸収させる（中途半端な短い種目を避ける）。
- */
-const MIN_SEGMENT_FRACTION = 0.4;
-
-/**
  * 選んだ合計時間(plannedSec = 種目だけの予算)とレベルから、
  * 種目 → 休憩 → 種目 … のセグメント列を組み立てる。
  * 休憩は種目の予算を消費しないため、セグメント全体の長さ（最後の endSec）は
  * plannedSec より休憩ぶんだけ長くなる。
  *
- * firstExerciseName を渡すと、最初の1本だけレベル別ローテーションの代わりに
- * その名前を使う（目標ロードマップの「今週のタスク」を反映するため）。
+ * 本数はレベル別の目安時間(workSec)に一番近くなるよう先に決め、
+ * plannedSec をその本数で均等割りする（例: 1分・ふつう(40秒目安)→ 30秒×2本）。
+ * 割り切れない端数は最後の1本にまとめて吸収する。
+ *
+ * firstExerciseName を渡すと、レベル別ローテーションの代わりに
+ * 全ての種目でその名前を使う（目標ロードマップの「今週のタスク」を反映するため）。
+ * 最初の1本だけ差し替えてしまうと、同じセッション内で今週のタスクと無関係な
+ * ローテーション種目（プランクなど）が混ざって表示され、紛らわしくなるため。
  */
 export function buildWorkoutSequence(
   plannedSec: number,
@@ -72,19 +72,16 @@ export function buildWorkoutSequence(
 ): WorkoutSegment[] {
   const { exercises, workSec, restSec } = LEVEL_CONFIG[level];
 
-  let exerciseCount = Math.max(1, Math.ceil(plannedSec / workSec));
-  let lastDur = plannedSec - (exerciseCount - 1) * workSec;
-  if (lastDur < workSec * MIN_SEGMENT_FRACTION && exerciseCount > 1) {
-    // 最後の1本が短すぎる → 1本減らして、その分を新しい最後の1本に吸収させる
-    exerciseCount -= 1;
-    lastDur = plannedSec - (exerciseCount - 1) * workSec;
-  }
+  const exerciseCount = Math.max(1, Math.round(plannedSec / workSec));
+  const baseDur = Math.floor(plannedSec / exerciseCount);
+  const remainder = plannedSec - baseDur * exerciseCount;
 
   const segments: WorkoutSegment[] = [];
   let cursor = 0;
   for (let i = 0; i < exerciseCount; i += 1) {
-    const dur = i === exerciseCount - 1 ? lastDur : workSec;
-    const name = i === 0 && firstExerciseName ? firstExerciseName : exercises[i % exercises.length];
+    // 割り切れない端数（数秒程度）は最後の1本にまとめて吸収する
+    const dur = i === exerciseCount - 1 ? baseDur + remainder : baseDur;
+    const name = firstExerciseName ?? exercises[i % exercises.length];
     segments.push({ type: 'exercise', name, startSec: cursor, endSec: cursor + dur });
     cursor += dur;
 

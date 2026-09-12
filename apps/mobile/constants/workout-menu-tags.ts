@@ -10,8 +10,14 @@
 
 export interface WorkoutMenuTag {
   tag: string;
-  /** AI へ渡す説明（日本語） */
+  /** AI へ渡す説明（日本語）。複数の候補種目を挙げたカテゴリ名で、単一の種目名ではない */
   label: string;
+  /**
+   * 筋トレタイマーの「いまの種目」表示用に、label が挙げる候補の中から1つだけ選んだ
+   * 実際に行う種目名。label をそのまま使うと「プランク・デッドバグ」のように複数の
+   * 種目を1本のセグメント（30〜45秒）でやらせる指示になってしまうため分けている。
+   */
+  exerciseName: string;
   /** 器具が要るか（'none' なら不要） */
   equipment: 'none' | 'mat' | 'dumbbells' | 'ab_roller' | 'resistance_band' | 'step';
   /** 静かにできるか（狭い・集合住宅向け） */
@@ -20,33 +26,33 @@ export interface WorkoutMenuTag {
 
 export const WORKOUT_MENU_TAGS: WorkoutMenuTag[] = [
   // --- 体幹・お腹まわり ---
-  { tag: 'core_basic_quiet', label: '基本の体幹（プランク・デッドバグ）', equipment: 'none', quiet: true },
-  { tag: 'core_crunch', label: 'クランチ・レッグレイズ', equipment: 'mat', quiet: true },
-  { tag: 'core_ab_roller', label: '腹筋ローラー', equipment: 'ab_roller', quiet: true },
-  { tag: 'core_oblique', label: '腹斜筋（サイドプランク・ツイスト）', equipment: 'none', quiet: true },
-  { tag: 'core_advanced', label: '高負荷体幹（V字・ホロウ）', equipment: 'mat', quiet: true },
+  { tag: 'core_basic_quiet', label: '基本の体幹（プランク・デッドバグ）', exerciseName: 'プランク', equipment: 'none', quiet: true },
+  { tag: 'core_crunch', label: 'クランチ・レッグレイズ', exerciseName: 'クランチ', equipment: 'mat', quiet: true },
+  { tag: 'core_ab_roller', label: '腹筋ローラー', exerciseName: '腹筋ローラー', equipment: 'ab_roller', quiet: true },
+  { tag: 'core_oblique', label: '腹斜筋（サイドプランク・ツイスト）', exerciseName: 'サイドプランク', equipment: 'none', quiet: true },
+  { tag: 'core_advanced', label: '高負荷体幹（V字・ホロウ）', exerciseName: 'V字腹筋', equipment: 'mat', quiet: true },
   // --- 体力・有酸素 ---
-  { tag: 'stamina_lowimpact', label: '静かな有酸素（その場もも上げ・シャドー）', equipment: 'none', quiet: true },
-  { tag: 'stamina_cardio', label: '通常の有酸素（バーピー・ジャンプ）', equipment: 'none', quiet: false },
-  { tag: 'stamina_interval', label: '短時間インターバル（HIIT）', equipment: 'none', quiet: false },
-  { tag: 'stamina_stepper', label: '踏み台・階段', equipment: 'step', quiet: false },
+  { tag: 'stamina_lowimpact', label: '静かな有酸素（その場もも上げ・シャドー）', exerciseName: 'その場もも上げ', equipment: 'none', quiet: true },
+  { tag: 'stamina_cardio', label: '通常の有酸素（バーピー・ジャンプ）', exerciseName: 'バーピー', equipment: 'none', quiet: false },
+  { tag: 'stamina_interval', label: '短時間インターバル（HIIT）', exerciseName: 'HIITインターバル', equipment: 'none', quiet: false },
+  { tag: 'stamina_stepper', label: '踏み台・階段', exerciseName: '踏み台昇降', equipment: 'step', quiet: false },
   // --- 姿勢 ---
-  { tag: 'posture_stretch', label: '姿勢改善ストレッチ（胸開き・肩甲骨）', equipment: 'none', quiet: true },
-  { tag: 'posture_back', label: '背面強化（バックエクステンション・Y-T-W）', equipment: 'mat', quiet: true },
-  { tag: 'posture_hip', label: '股関節まわり（ヒップリフト・クラム）', equipment: 'none', quiet: true },
-  { tag: 'posture_neck_shoulder', label: '首肩こり向けの軽い運動', equipment: 'none', quiet: true },
+  { tag: 'posture_stretch', label: '姿勢改善ストレッチ（胸開き・肩甲骨）', exerciseName: '胸開きストレッチ', equipment: 'none', quiet: true },
+  { tag: 'posture_back', label: '背面強化（バックエクステンション・Y-T-W）', exerciseName: 'バックエクステンション', equipment: 'mat', quiet: true },
+  { tag: 'posture_hip', label: '股関節まわり（ヒップリフト・クラム）', exerciseName: 'ヒップリフト', equipment: 'none', quiet: true },
+  { tag: 'posture_neck_shoulder', label: '首肩こり向けの軽い運動', exerciseName: '首肩ストレッチ', equipment: 'none', quiet: true },
   // --- ストレス発散・リラックス ---
-  { tag: 'stress_flow', label: 'ゆるいフロー（ヨガ的な動き・呼吸）', equipment: 'mat', quiet: true },
-  { tag: 'stress_walk', label: '散歩・軽い外出', equipment: 'none', quiet: true },
-  { tag: 'stress_mobility', label: '全身モビリティ（関節をゆるめる）', equipment: 'none', quiet: true },
+  { tag: 'stress_flow', label: 'ゆるいフロー（ヨガ的な動き・呼吸）', exerciseName: 'ゆるいヨガフロー', equipment: 'mat', quiet: true },
+  { tag: 'stress_walk', label: '散歩・軽い外出', exerciseName: '散歩', equipment: 'none', quiet: true },
+  { tag: 'stress_mobility', label: '全身モビリティ（関節をゆるめる）', exerciseName: '全身モビリティ', equipment: 'none', quiet: true },
   // --- 部位別 ---
-  { tag: 'lower_bodyweight', label: '下半身自重（スクワット・ランジ）', equipment: 'none', quiet: true },
-  { tag: 'lower_weighted', label: '下半身加重（ダンベルスクワット等）', equipment: 'dumbbells', quiet: true },
-  { tag: 'upper_bodyweight', label: '上半身自重（腕立て・ディップス）', equipment: 'none', quiet: true },
-  { tag: 'upper_band', label: 'バンドトレ（ローイング・プレス）', equipment: 'resistance_band', quiet: true },
+  { tag: 'lower_bodyweight', label: '下半身自重（スクワット・ランジ）', exerciseName: 'スクワット', equipment: 'none', quiet: true },
+  { tag: 'lower_weighted', label: '下半身加重（ダンベルスクワット等）', exerciseName: 'ダンベルスクワット', equipment: 'dumbbells', quiet: true },
+  { tag: 'upper_bodyweight', label: '上半身自重（腕立て・ディップス）', exerciseName: '腕立て伏せ', equipment: 'none', quiet: true },
+  { tag: 'upper_band', label: 'バンドトレ（ローイング・プレス）', exerciseName: 'バンドロー', equipment: 'resistance_band', quiet: true },
   // --- 全身・休養 ---
-  { tag: 'fullbody_beginner', label: '全身入門サーキット（低負荷）', equipment: 'none', quiet: false },
-  { tag: 'rest_active', label: 'アクティブレスト（軽い動き・休養日の推奨）', equipment: 'none', quiet: true },
+  { tag: 'fullbody_beginner', label: '全身入門サーキット（低負荷）', exerciseName: '全身サーキット', equipment: 'none', quiet: false },
+  { tag: 'rest_active', label: 'アクティブレスト（軽い動き・休養日の推奨）', exerciseName: '軽いストレッチ', equipment: 'none', quiet: true },
 ];
 
 export const WORKOUT_MENU_TAG_VALUES = WORKOUT_MENU_TAGS.map((t) => t.tag);
