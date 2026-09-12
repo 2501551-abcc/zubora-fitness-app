@@ -78,13 +78,13 @@ const SQUAT_PRAISE_TEXT = '素晴らしいフォームです！';
 
 // --- 判定の厳しさはここで一括管理する ---
 const TORSO_MIN_SIM = 0.25;
-const THIGH_MIN_SIM = 0.1;
+// const THIGH_MIN_SIM = 0.1; // 太ももの向きチェックは廃止（下記参照）
 const KNEE_TOO_SHALLOW_ABOVE = 140;
 const KNEE_TOO_DEEP_BELOW = 30;
 const KNEE_FORWARD_MAX_RATIO = 0.25;
 // 太ももが「まだ立ちすぎている」と判断する角度(床からの角度、度)。
 // これより大きい(＝床と平行から遠い)場合は「もっと深く」系のアドバイスにする。
-const THIGH_TOO_STEEP_ABOVE_DEG = 68;
+// const THIGH_TOO_STEEP_ABOVE_DEG = 68; // 太ももの向きチェックは廃止（下記参照）
 
 // MediaPipe Pose（33点）の主要インデックス
 // 12: 右肩, 24: 右腰, 26: 右膝, 28: 右足首, 32: 右つま先（＝カメラに向く側）
@@ -111,7 +111,7 @@ export const SQUAT_CONFIG: ExerciseConfig = {
 
   joints: [
     { id: 'torso', fromIdx: 24, toIdx: 12, ideal: { x: 0.0, y: -1.0 } },
-    { id: 'thigh', fromIdx: 24, toIdx: 26, ideal: { x: 0.707, y: 0.707 } },
+    // thigh: スコア計算からも除外（アドバイス判定に続き、ここでも点数を下げる要因になっていたため）
     { id: 'shin', fromIdx: 26, toIdx: 28, ideal: { x: 0.0, y: 1.0 } },
   ],
   angleCheck: { hipIdx: 24, kneeIdx: 26, ankleIdx: 28 },
@@ -122,8 +122,7 @@ export const SQUAT_CONFIG: ExerciseConfig = {
 
   jointThresholds: {
     torso: TORSO_MIN_SIM,
-    thigh: THIGH_MIN_SIM,
-    // shin: 個別の垂直性チェックは廃止（kneeOverToeCheckに一本化したため）
+    // thigh: 向きチェックは廃止（頻繁に引っかかっていたため。スコア計算には引き続き使用）
   },
 
   kneeOverToeCheck: {
@@ -134,20 +133,15 @@ export const SQUAT_CONFIG: ExerciseConfig = {
     maxForwardRatio: KNEE_FORWARD_MAX_RATIO,
   },
 
-  // 優先順位: 深さ(浅い/深すぎ) → 膝の前方超過 → 上半身の傾き → 太もも → OK
-  getAdvice: ({ kneeAngle, jointSimilarities, jointAngles, kneeForwardRatio }) => {
+  // 優先順位: 深さ(浅い/深すぎ) → 膝の前方超過 → 上半身の傾き → OK
+  // ※太もも単体の向きチェックは廃止（頻繁に引っかかり、スコアが上がりにくかったため）
+  getAdvice: ({ kneeAngle, jointSimilarities, kneeForwardRatio }) => {
     if (kneeAngle > KNEE_TOO_SHALLOW_ABOVE) return 'もう少し深めに腰を落としましょう！';
     if (kneeAngle < KNEE_TOO_DEEP_BELOW) return '腰の落としすぎです！膝に注意してください。';
     if (kneeForwardRatio > KNEE_FORWARD_MAX_RATIO)
       return '膝がつま先より前に出すぎています。お尻を後ろに引くイメージで。';
     if (jointSimilarities.torso < TORSO_MIN_SIM)
       return '上半身が前に傾きすぎています。胸を張りましょう。';
-    if (jointSimilarities.thigh < THIGH_MIN_SIM) {
-      if (jointAngles.thigh > THIGH_TOO_STEEP_ABOVE_DEG) {
-        return 'もう少し深く、太ももが床と並行になるように意識しましょう。';
-      }
-      return '太ももの向きが理想と少しずれています。膝が左右にブレないよう意識しましょう。';
-    }
     return SQUAT_PRAISE_TEXT;
   },
   praiseText: SQUAT_PRAISE_TEXT,
