@@ -29,6 +29,20 @@ import type { Roadmap, RoadmapTask, WeekFocus } from '@/types/goal';
 
 type NodeStatus = 'done' | 'active' | 'upcoming';
 
+// 「！」「？」「。」や絵文字の直後で改行する。
+// AIが生成するタイトルは文の区切りに句読点・絵文字を使うことが多く、そこを狙って
+// 明示的に改行しておくと、自動折り返しが単語の途中（例:「自重」）で起きにくくなる。
+const TITLE_BREAK_PATTERN = /([！？。]|[\u{2600}-\u{27BF}\u{1F000}-\u{1FFFF}])/gu;
+
+function withTitleBreaks(title: string): string {
+  return title
+    .replace(TITLE_BREAK_PATTERN, '$1\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+}
+
 export default function GoalRoadmapScreen() {
   const router = useRouter();
   const [roadmap, setRoadmap] = useState<Roadmap | null>(() => goalDraft.getRoadmap());
@@ -38,6 +52,7 @@ export default function GoalRoadmapScreen() {
   // （下書き＝未保存の段階では進捗の概念がないので null / 0 のまま）。
   const [focus, setFocus] = useState<WeekFocus | null>(null);
   const [weekWorkouts, setWeekWorkouts] = useState(0);
+  const [showRawInput, setShowRawInput] = useState(false);
 
   useEffect(() => {
     if (roadmap) return;
@@ -161,9 +176,9 @@ export default function GoalRoadmapScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.eyebrow}>{MonoGlyph.sparkle} あなたのロードマップ</Text>
-        <Text style={styles.title}>{roadmap.title}</Text>
-        <Text style={styles.rawInput}>“{roadmap.user_input_raw}” から</Text>
+        <Text style={styles.title} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {withTitleBreaks(roadmap.title)}
+        </Text>
 
         <View style={styles.tree}>
           {roadmap.milestones.map((m, i) => {
@@ -232,6 +247,23 @@ export default function GoalRoadmapScreen() {
         </View>
 
         <Pressable
+          style={styles.rawInputToggle}
+          onPress={() => setShowRawInput((v) => !v)}
+          hitSlop={8}>
+          <Text style={styles.rawInputToggleText}>
+            {showRawInput ? '入力した内容を閉じる' : '入力した内容を見る'}
+          </Text>
+          <Feather
+            name={showRawInput ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={MonoColors.textMuted}
+          />
+        </Pressable>
+        {showRawInput && (
+          <Text style={styles.rawInput}>{roadmap.user_input_raw}</Text>
+        )}
+
+        <Pressable
           style={[styles.primaryButton, starting && styles.primaryButtonDisabled]}
           onPress={start}
           disabled={starting}>
@@ -280,15 +312,32 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 12, color: MonoColors.textSecondary },
   title: {
     fontSize: 22,
+    lineHeight: 30,
     fontWeight: '700',
     color: MonoColors.ink,
     marginTop: 6,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  rawInputToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 14,
+    marginTop: 20,
+  },
+  rawInputToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: MonoColors.textMuted,
   },
   rawInput: {
     fontSize: 12,
     color: MonoColors.textMuted,
-    marginTop: 4,
-    marginBottom: 24,
+    marginTop: -4,
+    marginBottom: 4,
+    textAlign: 'left',
   },
 
   tree: {
