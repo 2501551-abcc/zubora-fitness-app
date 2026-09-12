@@ -46,6 +46,8 @@ export type FriendWithStatus = {
   /** 最終実施日からの経過日数。記録が無ければ null */
   rest_days: number | null;
   best_streak_days: number;
+  /** 今週（JST月曜始まり）の筋トレ合計時間（分） */
+  week_minutes: number;
   friends_since: string;
   /** true なら呼び出し本人の行（フレンドではなく自分自身） */
   is_self: boolean;

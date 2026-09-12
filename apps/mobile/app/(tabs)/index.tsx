@@ -1,8 +1,8 @@
 /**
  * ホーム画面（タブの "/"）
  * -------------------------------------------------------------
- * アプリのハブ。「筋トレを始める」で準備画面へ、目標ロードマップへの導線、
- * 下部の横並びメニューバー（ホーム / 目標 / フレンド / 設定）。
+ * アプリのハブ。「筋トレを始める」で準備画面へ、目標ロードマップへは
+ * 「今週の目標」カードか下部の横並びメニューバー（ホーム / 目標 / フレンド / 設定）から。
  * モノトーン基調 ＋ 星のあしらいで認証画面とトーンを統一。
  */
 
@@ -16,7 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { tapImpact, tapLight } from '@/lib/haptics';
 import { fetchThisWeekFocus } from '@/services/goalService';
+import { fetchFriends } from '@/services/friendsService';
 import { fetchHomeStats } from '@/services/workoutService';
+import type { Friend } from '@/types/friends';
 import type { WeekFocus } from '@/types/goal';
 import type { HomeStats } from '@/types/workout';
 import { supabase } from '@/supabase';
@@ -27,6 +29,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const [stats, setStats] = useState<HomeStats>(ZERO_STATS);
   const [focus, setFocus] = useState<WeekFocus | null>(null);
+  const [topFriend, setTopFriend] = useState<Friend | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -58,6 +61,20 @@ export default function HomeScreen() {
         fetchThisWeekFocus().then((f) => {
           if (alive) setFocus(f);
         });
+        // フレンドランキング1位（自分以外）を表示。フレンドが1人もいなければ非表示。
+        fetchFriends()
+          .then((list) => {
+            if (!alive) return;
+            const others = list.filter((f) => !f.is_self);
+            const top =
+              others.length > 0
+                ? [...others].sort((a, b) => b.streak_days - a.streak_days)[0]
+                : null;
+            setTopFriend(top);
+          })
+          .catch(() => {
+            if (alive) setTopFriend(null);
+          });
       };
       refresh();
       const retries = [1500, 4000].map((ms) => setTimeout(refresh, ms));
@@ -87,7 +104,7 @@ export default function HomeScreen() {
             <Text style={styles.hello}>
               {nickname ? `${nickname} さん` : 'ようこそ'}
             </Text>
-            <Text style={styles.title}>今日もゆるっといこう</Text>
+            <Text style={styles.title}>今日も頑張ろう</Text>
           </View>
           {user ? (
             <Pressable
@@ -124,7 +141,7 @@ export default function HomeScreen() {
               </Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statTop}>今週の合計</Text>
+              <Text style={styles.statTop}>{MonoGlyph.star} 今週の合計</Text>
               <Text style={styles.statValue}>
                 {stats.weekMinutes}
                 <Text style={styles.statUnit}> 分</Text>
@@ -168,17 +185,30 @@ export default function HomeScreen() {
             </Pressable>
           )}
 
-          {/* 目標ロードマップ導線 */}
-          <Pressable style={styles.goalLink} onPress={() => router.push('/goal')}>
-            <View style={styles.goalIcon}>
-              <Feather name="flag" size={16} color={MonoColors.ink} />
-            </View>
-            <View style={styles.flex}>
-              <Text style={styles.goalTitle}>目標ロードマップ</Text>
-              <Text style={styles.goalSub}>今の目標をチェックする</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={MonoColors.textMuted} />
-          </Pressable>
+          {/* フレンドランキング1位（フレンドが1人もいなければ非表示） */}
+          {topFriend && (
+            <Pressable style={styles.friendCard} onPress={() => router.push('/friends')}>
+              <View style={styles.friendCardHead}>
+                <Text style={styles.friendCardLabel}>
+                  {MonoGlyph.star} フレンドランキング1位
+                </Text>
+                <Feather name="chevron-right" size={16} color={MonoColors.textMuted} />
+              </View>
+              <View style={styles.friendCardBody}>
+                <View style={styles.friendAvatar}>
+                  <Text style={styles.friendAvatarEmoji}>{topFriend.avatar_emoji}</Text>
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.friendName} numberOfLines={1}>
+                    {topFriend.username}
+                  </Text>
+                  <Text style={styles.friendMeta}>
+                    🔥{topFriend.streak_days}日連続・今週{topFriend.week_minutes}分
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+          )}
         </View>
 
         {/* メインCTA（画面下に固定。下のメニューバーとの間隔を30に） */}
@@ -207,7 +237,7 @@ const styles = StyleSheet.create({
   middleGroup: {
     flex: 1,
     justifyContent: 'flex-start',
-    gap: 25,
+    gap: 10,
   },
 
   header: {
@@ -310,27 +340,41 @@ const styles = StyleSheet.create({
     backgroundColor: MonoColors.successSoft,
   },
 
-  goalLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  friendCard: {
     backgroundColor: MonoColors.surface,
     borderWidth: 1,
     borderColor: MonoColors.border,
     borderRadius: MonoLayout.radiusCard,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    padding: 20,
   },
-  goalIcon: {
-    width: 34,
-    height: 34,
+  friendCardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  friendCardLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: MonoColors.accent,
+    letterSpacing: 0.5,
+  },
+  friendCardBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  friendAvatar: {
+    width: 40,
+    height: 40,
     borderRadius: MonoLayout.radiusPill,
     backgroundColor: MonoColors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  goalTitle: { fontSize: 15, fontWeight: '700', color: MonoColors.ink },
-  goalSub: { fontSize: 12, color: MonoColors.textSecondary, marginTop: 2 },
+  friendAvatarEmoji: { fontSize: 20 },
+  friendName: { fontSize: 15, fontWeight: '700', color: MonoColors.ink },
+  friendMeta: { fontSize: 13, color: MonoColors.textSecondary, marginTop: 2 },
 
   cta: {
     backgroundColor: MonoColors.ink,

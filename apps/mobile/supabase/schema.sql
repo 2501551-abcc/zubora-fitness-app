@@ -412,6 +412,7 @@ returns table (
   streak_days      int,
   rest_days        int,
   best_streak_days int,
+  week_minutes     int,
   friends_since    timestamptz,
   is_self          boolean
 )
@@ -433,17 +434,28 @@ as $$
     union all
     select auth.uid(), now(), true
     where auth.uid() is not null
+  ),
+  wk as (
+    select date_trunc('week', (now() at time zone 'Asia/Tokyo'))::date as start_day
+  ),
+  week_totals as (
+    select w.user_id, sum(w.duration_sec) as total_sec
+    from public.workout_logs w, wk
+    where (w.created_at at time zone 'Asia/Tokyo')::date >= wk.start_day
+    group by w.user_id
   )
   select
     u.id, u.name, u.avatar_url, u.avatar_emoji, u.is_online, u.last_seen,
     coalesce(s.streak_days, 0)::int,
     s.rest_days::int,
     coalesce(s.best_streak_days, 0)::int,
+    coalesce(round(wt.total_sec / 60.0), 0)::int,
     i.friends_since,
     i.is_self
   from ids i
   join public.users u on u.id = i.friend_id
   left join public.user_workout_stats s on s.user_id = i.friend_id
+  left join week_totals wt on wt.user_id = i.friend_id
   order by coalesce(s.streak_days, 0) desc, u.name asc;
 $$;
 
@@ -582,9 +594,12 @@ create table if not exists public.goal_trees (
   title               text not null default '',
   user_input_raw      text not null default '',
   target_period_weeks int  not null default 12,
+  -- 前提10問の回答一式（表示用）。「入力した内容を見る」で大目標以外も出すため。
+  input_answers       jsonb not null default '{}'::jsonb,
   is_active           boolean not null default true,
   created_at          timestamptz not null default now()
 );
+alter table public.goal_trees add column if not exists input_answers jsonb not null default '{}'::jsonb;
 create index if not exists goal_trees_user_active
   on public.goal_trees (user_id, is_active, created_at desc);
 
@@ -654,12 +669,13 @@ begin
 
   update public.goal_trees set is_active = false where user_id = v_uid and is_active;
 
-  insert into public.goal_trees (user_id, title, user_input_raw, target_period_weeks)
+  insert into public.goal_trees (user_id, title, user_input_raw, target_period_weeks, input_answers)
   values (
     v_uid,
     coalesce(p_roadmap->>'title', ''),
     coalesce(p_roadmap->>'user_input_raw', ''),
-    coalesce((p_roadmap->>'target_period_weeks')::int, 12)
+    coalesce((p_roadmap->>'target_period_weeks')::int, 12),
+    coalesce(p_roadmap->'input_answers', '{}'::jsonb)
   )
   returning id into v_goal;
 
@@ -708,6 +724,7 @@ as $$
     'title', g.title,
     'user_input_raw', g.user_input_raw,
     'target_period_weeks', g.target_period_weeks,
+    'input_answers', g.input_answers,
     'milestones', coalesce((
       select jsonb_agg(jsonb_build_object(
         'milestone_id', m.id,

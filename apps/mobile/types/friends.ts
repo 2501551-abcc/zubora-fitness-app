@@ -20,6 +20,8 @@ export type Friend = {
   last_active_at: string;
   /** 自己ベストの連続日数（プログレスバーの目盛りに使用） */
   best_streak_days: number;
+  /** 今週（JST月曜始まり）の筋トレ合計時間（分） */
+  week_minutes: number;
   /** true なら自分自身の行（ランキングに自分も表示するため） */
   is_self: boolean;
 };

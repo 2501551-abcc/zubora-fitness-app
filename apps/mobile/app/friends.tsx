@@ -243,8 +243,8 @@ function FriendsDashboard() {
           />
         }>
         <Text style={styles.summaryLine}>
-          {MonoGlyph.sparkle} いま {onlineCount} 人がオンライン・
-          {friendsOnly.length} 人と励まし合い中
+          {onlineCount}人がオンライン／ 
+          {friendsOnly.length}人 
         </Text>
 
         {/* 届いているフレンド申請 */}
@@ -362,8 +362,11 @@ function FriendCard({
           )}
         </View>
 
-        {/* 継続度に応じた見出し */}
-        <Text style={styles.streakLine}>{status.headline}</Text>
+        {/* 継続度に応じた見出し ＋ 今週の合計時間を横並びで */}
+        <View style={styles.streakRow}>
+          <Text style={styles.streakLine}>{status.headline}</Text>
+          <Text style={styles.weekMinutesLine}>今週の筋トレ時間 {friend.week_minutes}分</Text>
+        </View>
 
         {friend.streak_days > 0 && stars > 0 && (
           <Text style={styles.starRow}>
@@ -926,10 +929,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  streakLine: { marginTop: 2 },
+  streakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 2,
+  },
+  streakLine: {},
   streakNum: { fontSize: 15, fontWeight: '800', color: MonoColors.ink },
   streakUnit: { fontSize: 12, fontWeight: '600', color: MonoColors.inkSoft },
   restText: { fontSize: 12, fontWeight: '600', color: MonoColors.textSecondary },
+  weekMinutesLine: { fontSize: 11, color: MonoColors.textMuted },
 
   starRow: { fontSize: 11, color: MonoColors.accent, letterSpacing: 2 },
   starMuted: { color: MonoColors.border },
