@@ -3,6 +3,10 @@
  * ロードマップの workout_menu_tag（22種、AI生成用）とは別軸——こちらは通常の
  * 「筋トレを始める」フロー（時間 + 強度だけ選ぶ）向けに、レベルごとの種目を
  * ローテーションさせて休憩を挟んだセグメント列を作る。
+ *
+ * 選んだ合計時間（plannedSec）は「種目（実際に動く時間）」の予算であり、
+ * 休憩はその予算を消費しない＝実際にかかる時間は plannedSec + 休憩の合計。
+ * （session.tsx 側で「筋トレの残り」は休憩中は減らないようにしている）
  */
 import type { WorkoutLevel } from '@/types/workout';
 
@@ -10,7 +14,7 @@ export interface WorkoutSegment {
   type: 'exercise' | 'rest';
   /** 表示名（休憩は「休憩」固定） */
   name: string;
-  /** セッション開始からのオフセット（秒） */
+  /** セッション開始からのオフセット（秒）。休憩も含む実時間の座標。 */
   startSec: number;
   /** 同上、終了オフセット（秒） */
   endSec: number;
@@ -47,62 +51,65 @@ const LEVEL_CONFIG: Record<WorkoutLevel, LevelConfig> = {
 };
 
 /**
- * 新しいセグメントを開始する価値があるとみなす最低ライン（本来の長さに対する割合）。
- * これを下回る中途半端な種目/休憩は追加せず、直前のセグメントを延長して埋める。
+ * 最後の1本が本来の長さに対してこの割合未満しかない場合は追加せず、
+ * 1本減らしてその分を最後の種目に吸収させる（中途半端な短い種目を避ける）。
  */
 const MIN_SEGMENT_FRACTION = 0.4;
 
 /**
- * 選んだ合計時間(plannedSec)とレベルから、種目 → 休憩 → 種目 … のセグメント列を
- * 組み立てる。最後に半端な時間（本来の長さの40%未満）しか残らない場合は、
- * その種目/休憩を追加せず直前のセグメントを plannedSec まで延長する
- * （例: 1分選択時に「スクワット40秒 + 休憩15秒」のあと5秒だけ次の種目、
- * という中途半端な状態を避け、休憩を20秒に延ばして丁度埋める）。
+ * 選んだ合計時間(plannedSec = 種目だけの予算)とレベルから、
+ * 種目 → 休憩 → 種目 … のセグメント列を組み立てる。
+ * 休憩は種目の予算を消費しないため、セグメント全体の長さ（最後の endSec）は
+ * plannedSec より休憩ぶんだけ長くなる。
  */
 export function buildWorkoutSequence(plannedSec: number, level: WorkoutLevel): WorkoutSegment[] {
   const { exercises, workSec, restSec } = LEVEL_CONFIG[level];
+
+  let exerciseCount = Math.max(1, Math.ceil(plannedSec / workSec));
+  let lastDur = plannedSec - (exerciseCount - 1) * workSec;
+  if (lastDur < workSec * MIN_SEGMENT_FRACTION && exerciseCount > 1) {
+    // 最後の1本が短すぎる → 1本減らして、その分を新しい最後の1本に吸収させる
+    exerciseCount -= 1;
+    lastDur = plannedSec - (exerciseCount - 1) * workSec;
+  }
+
   const segments: WorkoutSegment[] = [];
-  let elapsed = 0;
-  let exerciseIndex = 0;
+  let cursor = 0;
+  for (let i = 0; i < exerciseCount; i += 1) {
+    const dur = i === exerciseCount - 1 ? lastDur : workSec;
+    segments.push({
+      type: 'exercise',
+      name: exercises[i % exercises.length],
+      startSec: cursor,
+      endSec: cursor + dur,
+    });
+    cursor += dur;
 
-  while (elapsed < plannedSec) {
-    const isRest = segments.length % 2 === 1; // 種目 → 休憩 → 種目 … の交互
-    const duration = isRest ? restSec : workSec;
-    const remaining = plannedSec - elapsed;
-
-    if (remaining < duration * MIN_SEGMENT_FRACTION) {
-      if (segments.length === 0) {
-        // そもそも1つもセグメントが無い（plannedSec 自体が極端に短い）場合は、
-        // 延長する相手が無いので種目だけの短いセグメントを作る。
-        segments.push({
-          type: 'exercise',
-          name: exercises[0],
-          startSec: elapsed,
-          endSec: plannedSec,
-        });
-      } else {
-        // 直前のセグメント（休憩 or 種目）を延長して、半端な追加をしない。
-        segments[segments.length - 1].endSec = plannedSec;
-      }
-      break;
+    if (i < exerciseCount - 1) {
+      segments.push({ type: 'rest', name: '休憩', startSec: cursor, endSec: cursor + restSec });
+      cursor += restSec;
     }
-
-    const name = isRest ? '休憩' : exercises[exerciseIndex % exercises.length];
-    const endSec = Math.min(plannedSec, elapsed + duration);
-
-    segments.push({ type: isRest ? 'rest' : 'exercise', name, startSec: elapsed, endSec });
-
-    if (!isRest) exerciseIndex += 1;
-    elapsed = endSec;
   }
 
   return segments;
 }
 
-/** 経過秒数から、今どのセグメントにいるかを返す。 */
+/** 経過秒数（休憩込みの実時間）から、今どのセグメントにいるかを返す。 */
 export function findSegmentAt(segments: WorkoutSegment[], elapsedSec: number): WorkoutSegment {
   return (
     segments.find((s) => elapsedSec >= s.startSec && elapsedSec < s.endSec) ??
     segments[segments.length - 1]
   );
+}
+
+/**
+ * 実時間の経過（休憩込み）から、「種目だけ」の消化量を出す。
+ * 休憩中はこの値が増えない＝「筋トレの残り時間」を止めるための計算。
+ */
+export function exerciseElapsedAt(segments: WorkoutSegment[], elapsedSec: number): number {
+  return segments.reduce((sum, s) => {
+    if (s.type !== 'exercise') return sum;
+    const dur = s.endSec - s.startSec;
+    return sum + Math.max(0, Math.min(dur, elapsedSec - s.startSec));
+  }, 0);
 }

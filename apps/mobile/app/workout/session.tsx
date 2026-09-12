@@ -5,6 +5,8 @@
  *  - 決めた分数ぶんだけ「減っていくバー」で進捗を可視化。
  *  - レベルに応じたローテーションで「今の種目」を表示し、種目のあいだに
  *    休憩を自動で挟む（constants/workout-sequence.ts）。
+ *  - 選んだ時間は「運動時間」の予算。休憩中はこの予算を消費しない
+ *    （休憩ぶんは実時間としては追加でかかる）。
  *  - 一時停止 / 再開ができる。
  *  - 完了で結果を services.saveWorkoutSession() に渡し、サマリー画面へ。
  *  - 中断はホームへ戻る。
@@ -14,7 +16,11 @@
 
 import { DepletingBar } from '@/components/workout/depleting-bar';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
-import { buildWorkoutSequence, findSegmentAt } from '@/constants/workout-sequence';
+import {
+  buildWorkoutSequence,
+  exerciseElapsedAt,
+  findSegmentAt,
+} from '@/constants/workout-sequence';
 import { formatTime } from '@/lib/format-time';
 import { notifySuccess, tapLight } from '@/lib/haptics';
 import { saveWorkoutSession } from '@/services/workoutService';
@@ -35,17 +41,24 @@ export default function WorkoutSessionScreen() {
   const plannedSec = clampNumber(Number(params.durationSec), 60, 60 * 90, 15 * 60);
   const level = normalizeLevel(params.level);
 
-  const [remainingSec, setRemainingSec] = useState(plannedSec);
+  // レベル×合計時間から一度だけ組み立てる（種目 → 休憩 → 種目 …、休憩込みの実時間座標）
+  const segments = useMemo(() => buildWorkoutSequence(plannedSec, level), [plannedSec, level]);
+  const totalSec = segments.length > 0 ? segments[segments.length - 1].endSec : plannedSec;
+
+  // realElapsedSec = 休憩も含めた実時間の経過（セグメント切り替えの基準）
+  const [realElapsedSec, setRealElapsedSec] = useState(0);
   const [isRunning, setIsRunning] = useState(true);
 
-  // レベル×合計時間から一度だけ組み立てる（種目 → 休憩 → 種目 …）
-  const segments = useMemo(() => buildWorkoutSequence(plannedSec, level), [plannedSec, level]);
-  const elapsedSec = plannedSec - remainingSec;
-  const currentSegment = findSegmentAt(segments, elapsedSec);
-  const segmentRemainingSec = Math.max(0, currentSegment.endSec - elapsedSec);
+  const currentSegment = findSegmentAt(segments, realElapsedSec);
+  const segmentRemainingSec = Math.max(0, currentSegment.endSec - realElapsedSec);
+  // 運動セグメントの消化量だけを積算＝休憩中は増えない「運動時間の残り」
+  const exerciseElapsedSec = exerciseElapsedAt(segments, realElapsedSec);
+  const remainingSec = Math.max(0, plannedSec - exerciseElapsedSec);
 
   const startedAtRef = useRef(new Date().toISOString());
-  const endTimeRef = useRef<number>(Date.now() + plannedSec * 1000); // 終了予定時刻(ms)
+  // 実時間の経過は「一時停止までの積算(elapsedBaseRef) + 今回の run 開始からの経過」で計算する
+  const elapsedBaseRef = useRef(0);
+  const runStartRef = useRef<number>(Date.now());
   const savedRef = useRef(false);
   const lastSegmentStartRef = useRef(currentSegment.startSec);
 
@@ -77,14 +90,15 @@ export default function WorkoutSessionScreen() {
     [plannedSec, level],
   );
 
-  // メインのカウントダウン。0になったら完了 → サマリーへ。
+  // メインのカウントダウン（実時間ベース）。全セグメントを消化したら完了 → サマリーへ。
   useEffect(() => {
     if (!isRunning) return;
 
     const id = setInterval(() => {
-      const left = Math.max(0, (endTimeRef.current - Date.now()) / 1000);
-      setRemainingSec(left);
-      if (left <= 0) {
+      const elapsed = elapsedBaseRef.current + (Date.now() - runStartRef.current) / 1000;
+      const clamped = Math.min(elapsed, totalSec);
+      setRealElapsedSec(clamped);
+      if (clamped >= totalSec) {
         clearInterval(id);
         setIsRunning(false);
         const result = finish(true, 0);
@@ -102,22 +116,21 @@ export default function WorkoutSessionScreen() {
     }, TICK_MS);
 
     return () => clearInterval(id);
-  }, [isRunning, finish, router]);
+  }, [isRunning, finish, router, totalSec]);
 
   const togglePause = useCallback(() => {
     tapLight();
     setIsRunning((running) => {
       if (running) {
-        // 一時停止：現在の残り時間を保持
-        const left = Math.max(0, (endTimeRef.current - Date.now()) / 1000);
-        setRemainingSec(left);
+        // 一時停止：これまでの実経過を積算しておく
+        elapsedBaseRef.current += (Date.now() - runStartRef.current) / 1000;
       } else {
-        // 再開：残り時間から終了予定時刻を引き直す
-        endTimeRef.current = Date.now() + remainingSec * 1000;
+        // 再開：ここからの経過を新たに計測する
+        runStartRef.current = Date.now();
       }
       return !running;
     });
-  }, [remainingSec]);
+  }, []);
 
   const quit = useCallback(() => {
     finish(false, remainingSec); // 途中終了として記録
@@ -150,7 +163,7 @@ export default function WorkoutSessionScreen() {
         <Text style={styles.exerciseName}>{currentSegment.name}</Text>
         <Text style={styles.time}>{formatTime(segmentRemainingSec)}</Text>
         <Text style={styles.planned}>
-          全体の残り {formatTime(remainingSec)}（目標 {Math.round(plannedSec / 60)}分）
+          運動の残り {formatTime(remainingSec)}（目標 {Math.round(plannedSec / 60)}分・休憩は含まず）
         </Text>
       </View>
 
