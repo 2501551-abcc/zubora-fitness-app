@@ -74,6 +74,11 @@ export interface Roadmap {
   user_input_raw: string;
   target_period_weeks: number;
   milestones: RoadmapMilestone[];
+  /**
+   * 前提10問で選んだ回答一式（表示用）。生成時に goalDraft.toInput() を積んで保存する。
+   * 保存前のマイグレーションで作られた古いロードマップには無いので任意。
+   */
+  input_answers?: Partial<RoadmapInput> | null;
 }
 
 /* ========== ホーム画面用: 今週のフォーカス ========== */

@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { GOAL_QUESTIONS, type OptionValue } from '@/constants/goal-questions';
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { goalDraft } from '@/lib/goal-draft';
 import { tapImpact } from '@/lib/haptics';
@@ -28,6 +29,30 @@ import { fetchHomeStats } from '@/services/workoutService';
 import type { Roadmap, RoadmapTask, WeekFocus } from '@/types/goal';
 
 type NodeStatus = 'done' | 'active' | 'upcoming';
+
+/** 前提10問の回答一式から、質問ごとの選んだラベルを組み立てる（未回答/該当なしは除外）。 */
+function buildAnswerRows(
+  answers: Roadmap['input_answers'],
+): { question: string; label: string }[] {
+  if (!answers) return [];
+  return GOAL_QUESTIONS.reduce<{ question: string; label: string }[]>((rows, q) => {
+    const raw = (answers as Record<string, OptionValue | OptionValue[]>)[q.field];
+    if (raw === undefined) return rows;
+
+    if (q.kind === 'multi') {
+      const values = Array.isArray(raw) ? raw : [];
+      const labels = values
+        .map((v) => q.options.find((o) => o.value === v)?.label)
+        .filter((l): l is string => !!l);
+      if (labels.length > 0) rows.push({ question: q.title, label: labels.join('・') });
+      return rows;
+    }
+
+    const label = q.options.find((o) => o.value === raw)?.label;
+    if (label) rows.push({ question: q.title, label });
+    return rows;
+  }, []);
+}
 
 // 「！」「？」「。」や絵文字の直後で改行する。
 // AIが生成するタイトルは文の区切りに句読点・絵文字を使うことが多く、そこを狙って
@@ -202,7 +227,7 @@ export default function GoalRoadmapScreen() {
                   ]}>
                   <View style={styles.cardHead}>
                     <View style={styles.milestoneTitleRow}>
-                      <Text style={styles.milestoneTitle}>{m.title}</Text>
+                      <Text style={styles.milestoneTitle}>{withTitleBreaks(m.title)}</Text>
                       {status === 'done' && (
                         <View style={styles.doneBadge}>
                           <Text style={styles.doneBadgeText}>完了！</Text>
@@ -226,7 +251,7 @@ export default function GoalRoadmapScreen() {
                               styles.taskTitle,
                               tStatus === 'done' && styles.taskTitleDone,
                             ]}>
-                            {t.title}
+                            {withTitleBreaks(t.title)}
                           </Text>
                         </View>
                         {tStatus === 'done' ? (
@@ -260,7 +285,18 @@ export default function GoalRoadmapScreen() {
           />
         </Pressable>
         {showRawInput && (
-          <Text style={styles.rawInput}>{roadmap.user_input_raw}</Text>
+          <View style={styles.rawInputBox}>
+            <View style={styles.answerRow}>
+              <Text style={styles.rawInputLabel}>大目標</Text>
+              <Text style={styles.rawInput}>{roadmap.user_input_raw}</Text>
+            </View>
+            {buildAnswerRows(roadmap.input_answers).map((row) => (
+              <View key={row.question} style={styles.answerRow}>
+                <Text style={styles.rawInputLabel}>{row.question}</Text>
+                <Text style={styles.rawInput}>{row.label}</Text>
+              </View>
+            ))}
+          </View>
         )}
 
         <Pressable
@@ -332,11 +368,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: MonoColors.textMuted,
   },
-  rawInput: {
-    fontSize: 12,
-    color: MonoColors.textMuted,
-    marginTop: -4,
+  rawInputBox: {
+    gap: 12,
     marginBottom: 4,
+  },
+  answerRow: {
+    gap: 2,
+  },
+  rawInputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: MonoColors.textMuted,
+  },
+  rawInput: {
+    fontSize: 13,
+    color: MonoColors.inkSoft,
     textAlign: 'left',
   },
 

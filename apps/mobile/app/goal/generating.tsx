@@ -46,10 +46,12 @@ export default function GoalGeneratingScreen() {
 
   useEffect(() => {
     let alive = true;
-    generateRoadmap(goalDraft.toInput())
+    const input = goalDraft.toInput();
+    generateRoadmap(input)
       .then((roadmap) => {
         if (!alive) return;
-        goalDraft.setRoadmap(roadmap);
+        // 前提10問の回答一式も一緒に持たせておく（「入力した内容を見る」表示用）。
+        goalDraft.setRoadmap({ ...roadmap, input_answers: input });
         notifySuccess();
         router.replace('/goal');
       })

@@ -87,7 +87,7 @@ export default function HomeScreen() {
             <Text style={styles.hello}>
               {nickname ? `${nickname} さん` : 'ようこそ'}
             </Text>
-            <Text style={styles.title}>今日もゆるっといこう</Text>
+            <Text style={styles.title}>今日も頑張ろう</Text>
           </View>
           {user ? (
             <Pressable
@@ -124,7 +124,7 @@ export default function HomeScreen() {
               </Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statTop}>今週の合計</Text>
+              <Text style={styles.statTop}>{MonoGlyph.star} 今週の合計</Text>
               <Text style={styles.statValue}>
                 {stats.weekMinutes}
                 <Text style={styles.statUnit}> 分</Text>
