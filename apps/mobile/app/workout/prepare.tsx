@@ -9,6 +9,7 @@
  */
 
 import { DrumRollPicker, type DrumRollItem } from '@/components/workout/drum-roll-picker';
+import { MonoColors } from '@/constants/mono-theme';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
 import { tapImpact } from '@/lib/haptics';
 import { syncDailyReminder } from '@/lib/reminders';
@@ -135,7 +136,7 @@ export default function PrepareScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WorkoutColors.screenBg,
+    backgroundColor: MonoColors.screenBg,
     paddingHorizontal: 20,
     justifyContent: 'space-between',
   },
@@ -144,35 +145,35 @@ const styles = StyleSheet.create({
   },
   hello: {
     fontSize: 14,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
     marginTop: 4,
   },
   countdownPill: {
     alignSelf: 'center',
-    backgroundColor: WorkoutColors.mist,
+    backgroundColor: MonoColors.surfaceAlt,
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 18,
   },
   countdownText: {
     fontSize: 14,
-    color: WorkoutColors.ink,
+    color: MonoColors.inkSoft,
   },
   countdownNum: {
     fontSize: 18,
     fontWeight: '700',
-    color: WorkoutColors.primary,
+    color: MonoColors.ink,
   },
   drumWrap: {
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderRadius: WorkoutLayout.radiusCard,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
     paddingVertical: 8,
   },
   levelRow: {
@@ -184,32 +185,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
   },
   levelChipActive: {
-    backgroundColor: WorkoutColors.mist,
-    borderColor: WorkoutColors.soft,
+    backgroundColor: MonoColors.surfaceAlt,
+    borderColor: MonoColors.ink,
   },
   levelText: {
     fontSize: 15,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   levelTextActive: {
-    color: WorkoutColors.ink,
+    color: MonoColors.ink,
     fontWeight: '600',
   },
   startButton: {
-    backgroundColor: WorkoutColors.primary,
+    backgroundColor: MonoColors.ink,
     borderRadius: WorkoutLayout.radiusControl,
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: 'center',
     marginBottom: 8,
   },
   startText: {
     color: WorkoutColors.onAccent,
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '700',
   },
 });

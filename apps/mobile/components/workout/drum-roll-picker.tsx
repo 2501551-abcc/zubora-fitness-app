@@ -7,7 +7,8 @@
  * 汎用コンポーネントなので、時間以外の選択にも使い回せます。
  */
 
-import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
+import { MonoColors } from '@/constants/mono-theme';
+import { WorkoutLayout } from '@/constants/workout-theme';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useMemo, useRef } from 'react';
 import {
@@ -150,7 +151,7 @@ const styles = StyleSheet.create({
     left: 24,
     right: 24,
     borderRadius: WorkoutLayout.radiusControl,
-    backgroundColor: WorkoutColors.mist,
+    backgroundColor: MonoColors.surfaceAlt,
   },
   row: {
     height: ITEM_HEIGHT,
@@ -160,6 +161,6 @@ const styles = StyleSheet.create({
   rowText: {
     fontSize: 26,
     fontWeight: '600',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
   },
 });

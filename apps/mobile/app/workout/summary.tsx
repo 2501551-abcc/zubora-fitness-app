@@ -5,6 +5,7 @@
  * フロー図の「筋トレ終了 → 目標ロード」へ繋ぐ導線を用意。
  */
 
+import { MonoColors } from '@/constants/mono-theme';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
 import { tapImpact } from '@/lib/haptics';
 import { fetchStreakDays } from '@/services/workoutService';
@@ -54,7 +55,7 @@ export default function WorkoutSummaryScreen() {
         </View>
         <Text style={styles.title}>{completed ? 'おつかれさま！' : 'ナイスファイト！'}</Text>
         <Text style={styles.subtitle}>
-          {completed ? '今日のぶん、やりきったね' : 'ちょっとでも動けたのが偉い'}
+          {completed ? '今日の分、やりきったね' : 'ちょっとでも動けたのが偉い'}
         </Text>
       </View>
 
@@ -114,7 +115,7 @@ function normalizeLevel(v: string | undefined): WorkoutLevel {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WorkoutColors.screenBg,
+    backgroundColor: MonoColors.screenBg,
     paddingHorizontal: 24,
     justifyContent: 'space-between',
     paddingVertical: 12,
@@ -127,7 +128,7 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: WorkoutColors.mist,
+    backgroundColor: MonoColors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -135,16 +136,16 @@ const styles = StyleSheet.create({
   badgeMark: {
     fontSize: 44,
     fontWeight: '700',
-    color: WorkoutColors.primary,
+    color: MonoColors.ink,
   },
   title: {
     fontSize: 26,
     fontWeight: '700',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
   },
   subtitle: {
     fontSize: 15,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
     marginTop: 8,
   },
   stats: {
@@ -153,9 +154,9 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: WorkoutColors.surface,
+    backgroundColor: MonoColors.surface,
     borderWidth: 1,
-    borderColor: WorkoutColors.border,
+    borderColor: MonoColors.border,
     borderRadius: WorkoutLayout.radiusControl,
     paddingVertical: 20,
     alignItems: 'center',
@@ -163,16 +164,16 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 30,
     fontWeight: '700',
-    color: WorkoutColors.textPrimary,
+    color: MonoColors.ink,
   },
   statUnit: {
     fontSize: 14,
     fontWeight: '400',
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   statLabel: {
     fontSize: 12,
-    color: WorkoutColors.textMuted,
+    color: MonoColors.textMuted,
     marginTop: 6,
   },
   levelRow: {
@@ -180,14 +181,14 @@ const styles = StyleSheet.create({
   },
   levelText: {
     fontSize: 14,
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
   },
   actions: {
     gap: 12,
     marginBottom: 8,
   },
   primaryButton: {
-    backgroundColor: WorkoutColors.primary,
+    backgroundColor: MonoColors.ink,
     borderRadius: WorkoutLayout.radiusControl,
     paddingVertical: 16,
     alignItems: 'center',
@@ -202,7 +203,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   secondaryText: {
-    color: WorkoutColors.textSecondary,
+    color: MonoColors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
   },

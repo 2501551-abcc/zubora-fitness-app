@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: MonoLayout.radiusPill,
-    backgroundColor: MonoColors.accentTint,
+    backgroundColor: MonoColors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
