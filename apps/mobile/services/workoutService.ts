@@ -11,7 +11,11 @@
  */
 
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
+<<<<<<< HEAD
 import type { DurationOption, PoseAnalysisResult, WorkoutMenuItem, WorkoutResult } from '@/types/workout';
+=======
+import type { DurationOption, HomeStats, WorkoutResult } from '@/types/workout';
+>>>>>>> main
 import { supabase } from '../supabase';
 
 /** ドラムロールに表示する時間の候補（分）。ずぼら向けに短い刻みも用意。 */
@@ -56,9 +60,6 @@ export async function fetchDefaultDurationSec(): Promise<number> {
  */
 
 export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
-  console.log('[workoutService] saveWorkoutSession:', result);
-
-  // workout_logs は RLS 有効。user_id はログイン中ユーザーの id である必要がある。
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -68,20 +69,20 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   }
 
   try {
+<<<<<<< HEAD
     // menu_id は現状 UI に無いため null。AI選択メニューを保存する場合はここに追加。
     // result の各項目（時間・強度・完走可否）を保存したくなったらカラム追加＋ここへ。
+=======
+    // workout_logs は RLS 有効。created_at は DB 側 default now()（= 実施日時）。
+    // menu_id は現状 UI に無いため未指定。強度・完走可否を残したくなったらカラム追加。
+>>>>>>> main
     const { error } = await supabase.from('workout_logs').insert({
       user_id: user.id,
-      // created_at は DB 側 default now() が入る（= 実施日時として集計に使用）
+      duration_sec: Math.max(0, Math.round(result.completedSec)),
     });
-
-    if (error) {
-      console.error('Supabaseへの保存に失敗しました:', error.message);
-    } else {
-      console.log('Supabaseへの保存に成功しました 🎉');
-    }
+    if (error) console.error('[workoutService] 保存に失敗:', error.message);
   } catch (err) {
-    console.error('通信エラーなど予期せぬ失敗:', err);
+    console.error('[workoutService] 保存で予期せぬエラー:', err);
   }
 
   // ホーム画面ウィジェットを更新（連続日数・最終実施日時）。iOS 以外は no-op。
@@ -96,19 +97,46 @@ export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
     console.warn('[workoutService] ウィジェット更新をスキップ:', err);
   }
 }
+<<<<<<< HEAD
 
 /*export async function saveWorkoutSession(result: WorkoutResult): Promise<void> {
   console.log('[workoutService] saveWorkoutSession (stub):', result);
 }
 */
+=======
+>>>>>>> main
 
 /**
- * 連続達成日数（ストリーク）を返す。サマリー画面などで表示。
- * TODO(backend): workout_sessions を日付で集計して連続日数を算出する。
- * 現状はダミーで 5 を返す。
+ * ホーム画面の実績（連続記録 / 今週の合計）をまとめて取得。
+ * 未ログイン時やエラー時はすべて 0。
+ */
+export async function fetchHomeStats(): Promise<HomeStats> {
+  const empty: HomeStats = { streakDays: 0, weekMinutes: 0, weekWorkouts: 0 };
+  try {
+    const { data, error } = await supabase.rpc('get_home_stats').single();
+    if (error || !data) return empty;
+    const row = data as {
+      streak_days: number | null;
+      week_minutes: number | null;
+      week_workouts: number | null;
+    };
+    return {
+      streakDays: row.streak_days ?? 0,
+      weekMinutes: row.week_minutes ?? 0,
+      weekWorkouts: row.week_workouts ?? 0,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * 連続達成日数（ストリーク）を返す。サマリー画面・ウィジェット更新で使用。
+ * 未ログイン時やエラー時は 0。
  */
 export async function fetchStreakDays(): Promise<number> {
-  return 5;
+  const { streakDays } = await fetchHomeStats();
+  return streakDays;
 }
 
 /**

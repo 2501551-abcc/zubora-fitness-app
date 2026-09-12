@@ -52,6 +52,7 @@ export const LEVEL_LABELS: Record<WorkoutLevel, string> = {
   hard: 'がっつり',
 };
 
+<<<<<<< HEAD
 /**
  * DB（workout_menus）に登録された「メニュー」1件分。
  * ホームの「筋トレを始める」から遷移するメニュー選択画面がこれを一覧表示する。
@@ -84,3 +85,14 @@ export interface PoseAnalysisResult {
   repLog: PoseRepLog[];
 }
 
+=======
+/** ホーム画面の実績（連続記録 / 今週の合計） */
+export interface HomeStats {
+  /** 連続実施日数 */
+  streakDays: number;
+  /** 今週（JST・月曜はじまり）の実施時間合計（分） */
+  weekMinutes: number;
+  /** 今週の実施回数 */
+  weekWorkouts: number;
+}
+>>>>>>> main

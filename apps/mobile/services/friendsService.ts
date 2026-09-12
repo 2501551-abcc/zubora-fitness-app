@@ -19,6 +19,19 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { supabase } from '@/supabase';
+import { sendPushNotification } from '@/services/notificationService';
+
+/**
+ * 同じ topic の残存チャンネルを掃除する。
+ * supabase.channel(topic) は同名 topic が登録済みだと「既存の（購読済みかもしれない）
+ * チャンネル」を返すため、React StrictMode / Fast Refresh / 画面の再訪で
+ * `cannot add callbacks ... after subscribe()` が起きる。作成前に必ず呼ぶ。
+ */
+async function removeChannelsByTopic(topic: string): Promise<void> {
+  const realtimeTopic = `realtime:${topic}`;
+  const stale = supabase.getChannels().filter((c) => c.topic === realtimeTopic);
+  await Promise.all(stale.map((c) => supabase.removeChannel(c)));
+}
 import type {
   Friend,
   FriendRequest,
@@ -49,10 +62,10 @@ export async function getIncomingFriendRequests(): Promise<IncomingRequestRow[]>
  * 申請・承認・拒否
  * ========================================================== */
 
-/** ユーザー名（ID）を指定してフレンド申請を送る */
-export async function sendFriendRequest(username: string): Promise<SendRequestResult> {
+/** フレンドコードを指定してフレンド申請を送る（ハイフン・大小文字は無視される） */
+/*export async function sendFriendRequest(friendCode: string): Promise<SendRequestResult> {
   const { error } = await supabase.rpc('send_friend_request', {
-    addressee_name: username.trim(),
+    friend_code: friendCode.trim(),
   });
   if (!error) return { ok: true };
 
@@ -62,6 +75,61 @@ export async function sendFriendRequest(username: string): Promise<SendRequestRe
   if (msg.includes('ALREADY_REQUESTED')) return { ok: false, reason: 'already_requested' };
   if (msg.includes('CANNOT_ADD_SELF')) return { ok: false, reason: 'self' };
   return { ok: false, reason: 'unknown' };
+}
+*/
+
+/** フレンドコードを指定してフレンド申請を送る（通知送信付き） */
+export async function sendFriendRequest(friendCode: string): Promise<SendRequestResult> {
+  const { error } = await supabase.rpc('send_friend_request', {
+    friend_code: friendCode.trim(),
+  });
+  
+  if (error) {
+    const msg = error.message ?? '';
+    if (msg.includes('USER_NOT_FOUND')) return { ok: false, reason: 'not_found' };
+    if (msg.includes('ALREADY_FRIENDS')) return { ok: false, reason: 'already_friend' };
+    if (msg.includes('ALREADY_REQUESTED')) return { ok: false, reason: 'already_requested' };
+    if (msg.includes('CANNOT_ADD_SELF')) return { ok: false, reason: 'self' };
+    return { ok: false, reason: 'unknown' };
+  }
+
+  // --- Push通知処理 ---
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const myUserId = auth.user?.id;
+
+    // 自分のユーザー名を取得
+    let myName = '誰か';
+    if (myUserId) {
+      const { data: myProfile } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', myUserId)
+        .single();
+      if (myProfile?.name) myName = myProfile.name;
+    }
+
+    // 相手の push_token をフレンドコードから取得
+    const formattedCode = friendCode.trim().toUpperCase();
+    const { data: targetUser } = await supabase
+      .from('users')
+      .select('push_token')
+      .eq('friend_code', formattedCode)
+      .single();
+
+    // トークンがあれば Push 通知を送信
+    if (targetUser?.push_token) {
+      await sendPushNotification(
+        targetUser.push_token,
+        'フレンド申請が届きました 🤝',
+        `${myName}さんからフレンド申請が届いています。`,
+      );
+    }
+  } catch (err) {
+    console.error('Push notification trigger error:', err);
+  }
+
+  return { ok: true };
 }
 
 export async function acceptFriendRequest(requestId: string): Promise<void> {
@@ -108,22 +176,32 @@ export async function removeFriend(friendUserId: string): Promise<void> {
  * ・購読開始/終了時に profiles.is_online も更新（postgres_changes 側の
  *   フォールバック用）
  */
+const PRESENCE_TOPIC = 'online-users';
+
 export function subscribeToPresence(onChange: (online: OnlineMap) => void): () => void {
   let channel: RealtimeChannel | null = null;
   let disposed = false;
 
-  (async () => {
+  const init = async () => {
     const { data: auth } = await supabase.auth.getUser();
     if (disposed) return;
-    const key = auth.user?.id ?? `anon-${Math.random().toString(36).slice(2)}`;
 
-    channel = supabase.channel('online-users', {
+    // 前回の残存チャンネルを掃除してからでないと、既存の購読済みチャンネルが返り
+    // .on() が "after subscribe()" で落ちる
+    await removeChannelsByTopic(PRESENCE_TOPIC);
+    if (disposed) return;
+
+    const key = auth.user?.id ?? `anon-${Math.random().toString(36).slice(2)}`;
+    const newChannel = supabase.channel(PRESENCE_TOPIC, {
       config: { presence: { key } },
     });
 
+    // 掃除後でも別 init が先に購読していたら（並行実行）触らずに抜ける
+    if (String(newChannel.state) !== 'closed') return;
+    channel = newChannel;
+
     const emit = () => {
-      if (!channel) return;
-      const state = channel.presenceState<{ last_active_at?: string }>();
+      const state = newChannel.presenceState<{ last_active_at?: string }>();
       const map: OnlineMap = {};
       for (const [userId, metas] of Object.entries(state)) {
         map[userId] = {
@@ -133,22 +211,25 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
       onChange(map);
     };
 
-    channel
+    newChannel
       .on('presence', { event: 'sync' }, emit)
       .on('presence', { event: 'join' }, emit)
       .on('presence', { event: 'leave' }, emit)
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          void channel?.track({ last_active_at: new Date().toISOString() });
+          void newChannel.track({ last_active_at: new Date().toISOString() });
           void supabase.rpc('update_my_presence', { p_is_online: true });
         }
       });
-  })();
+  };
+
+  void init();
 
   return () => {
     disposed = true;
     void supabase.rpc('update_my_presence', { p_is_online: false });
-    if (channel) void supabase.removeChannel(channel);
+    channel = null;
+    void removeChannelsByTopic(PRESENCE_TOPIC);
   };
 }
 
@@ -158,14 +239,21 @@ export function subscribeToPresence(onChange: (online: OnlineMap) => void): () =
 
 /** friendships への変更（自分宛の申請など）を購読 */
 export function subscribeToFriendRequests(onChange: () => void): () => void {
-  let channel: RealtimeChannel | null = null;
   let disposed = false;
+  let topic: string | null = null;
 
-  (async () => {
+  const init = async () => {
     const { data: auth } = await supabase.auth.getUser();
     if (disposed || !auth.user) return;
-    channel = supabase
-      .channel('friendship-changes')
+
+    topic = `friendship-changes-${auth.user.id}`;
+    await removeChannelsByTopic(topic);
+    if (disposed) return;
+
+    const newChannel = supabase.channel(topic);
+    if (String(newChannel.state) !== 'closed') return;
+
+    newChannel
       .on(
         'postgres_changes',
         {
@@ -177,11 +265,13 @@ export function subscribeToFriendRequests(onChange: () => void): () => void {
         () => onChange(),
       )
       .subscribe();
-  })();
+  };
+
+  void init();
 
   return () => {
     disposed = true;
-    if (channel) void supabase.removeChannel(channel);
+    if (topic) void removeChannelsByTopic(topic);
   };
 }
 
@@ -192,19 +282,33 @@ export function subscribeToFriendRequests(onChange: () => void): () => void {
 export function subscribeToFriendPresenceRows(
   onChange: (userId: string, isOnline: boolean, lastSeen: string) => void,
 ): () => void {
-  const channel = supabase
-    .channel('friend-presence-rows')
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'users' },
-      (payload) => {
-        const row = payload.new as { id: string; is_online: boolean; last_seen: string };
-        onChange(row.id, row.is_online, row.last_seen);
-      },
-    )
-    .subscribe();
+  const TOPIC = 'friend-presence-rows';
+  let disposed = false;
+
+  const init = async () => {
+    await removeChannelsByTopic(TOPIC);
+    if (disposed) return;
+
+    const channel = supabase.channel(TOPIC);
+    if (String(channel.state) !== 'closed') return;
+
+    channel
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'users' },
+        (payload) => {
+          const row = payload.new as { id: string; is_online: boolean; last_seen: string };
+          onChange(row.id, row.is_online, row.last_seen);
+        },
+      )
+      .subscribe();
+  };
+
+  void init();
+
   return () => {
-    void supabase.removeChannel(channel);
+    disposed = true;
+    void removeChannelsByTopic(TOPIC);
   };
 }
 
@@ -228,9 +332,10 @@ export async function fetchFriends(): Promise<Friend[]> {
     avatar_url: r.avatar_url,
     avatar_emoji: r.avatar_emoji ?? fallbackEmoji(r.user_id),
     streak_days: r.streak_days,
-    rest_days: r.rest_days ?? 0,
+    rest_days: r.rest_days, // null = まだ記録なし
     last_active_at: r.last_seen,
     best_streak_days: Math.max(r.best_streak_days, r.streak_days, 7),
+    is_self: r.is_self,
   }));
 }
 

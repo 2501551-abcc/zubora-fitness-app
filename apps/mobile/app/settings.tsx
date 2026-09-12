@@ -12,6 +12,7 @@
  */
 
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -29,6 +30,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { notifySuccess, tapImpact, tapLight } from '@/lib/haptics';
+import { ensureNotificationPermission, sendTestReminder, syncDailyReminder } from '@/lib/reminders';
 import {
   changeEmail,
   changePassword,
@@ -40,7 +42,19 @@ import {
 } from '@/services/authService';
 
 const AVATAR_PRESETS: string[] = ['✦', '✨', '🎀', '🤍', '🌙', '⭐️', '☕️', '🕊️'];
-const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** "21:30" / "2130" / "9:5" / "9時30分" などを "HH:MM" に正規化。無効なら null。 */
+function normalizeHm(input: string): string | null {
+  const m = input
+    .trim()
+    .replace(/[０-９]/g, (d) => String('０１２３４５６７８９'.indexOf(d)))
+    .match(/^(\d{1,2})\D?(\d{1,2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+}
 
 /** 未ログイン（ゲスト）時に表示する内容。編集操作はログインへ誘導する。 */
 const GUEST_ACCOUNT: AccountInfo = {
@@ -52,6 +66,7 @@ const GUEST_ACCOUNT: AccountInfo = {
   avatarUrl: null,
   preferredTimeOfDay: '20:00',
   notificationEnabled: true,
+  friendCode: '',
 };
 
 type Editing = null | 'profile' | 'email' | 'password' | 'time';
@@ -64,6 +79,7 @@ export default function SettingsScreen() {
   const [loggedOut, setLoggedOut] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<Editing>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // 未ログインでも設定画面は閲覧できる（ゲスト表示）。保存系だけログインへ誘導する。
   const isGuest = loggedOut || !account;
@@ -170,16 +186,18 @@ export default function SettingsScreen() {
     }
   };
 
-  const saveTime = async (hhmm: string) => {
+  const saveTime = async (raw: string) => {
     if (isGuest) return requireLogin();
-    if (!HHMM.test(hhmm)) {
-      Alert.alert('入力エラー', '「20:30」のような形式で入力してください。');
+    const hhmm = normalizeHm(raw);
+    if (!hhmm) {
+      Alert.alert('入力エラー', '「21:30」のような形式で入力してください。');
       return;
     }
     setBusy(true);
     try {
       await updateProfile({ preferred_time_of_day: `${hhmm}:00` });
       await reload();
+      void syncDailyReminder();
       setEditing(null);
       notifySuccess();
     } catch (e) {
@@ -194,10 +212,28 @@ export default function SettingsScreen() {
     setAccount({ ...account, notificationEnabled: value });
     try {
       await updateProfile({ notification_enabled: value });
+      if (value && !(await ensureNotificationPermission())) {
+        Alert.alert(
+          '通知が許可されていません',
+          'iOS の「設定 > ズボラ筋トレ > 通知」から許可してください。',
+        );
+      }
+      void syncDailyReminder();
     } catch (e) {
       setAccount({ ...account, notificationEnabled: !value });
       Alert.alert('エラー', msg(e, '設定を保存できませんでした。'));
     }
+  };
+
+  const runTestNotification = async () => {
+    tapLight();
+    const ok = await sendTestReminder();
+    Alert.alert(
+      ok ? 'テスト通知を送りました' : '通知が許可されていません',
+      ok
+        ? '数秒後に届きます。届かない場合は端末の通知設定を確認してください。'
+        : 'iOS の「設定 > ズボラ筋トレ > 通知」から許可してください。',
+    );
   };
 
   const handleLogout = () => {
@@ -282,7 +318,6 @@ export default function SettingsScreen() {
 
         {/* プロフィール（フレンドから見える情報） */}
         <View style={styles.profileCard}>
-          <Text style={styles.decoGlyphCorner}>{MonoGlyph.ribbon}</Text>
           <View style={styles.avatarRing}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarEmoji}>{view.avatarEmoji}</Text>
@@ -316,6 +351,39 @@ export default function SettingsScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* フレンドコード（共有用） */}
+        {!isGuest && (
+          <>
+            <SectionLabel>フレンドコード</SectionLabel>
+            <Pressable
+              style={[styles.card, styles.friendCodeCard]}
+              onPress={() => {
+                if (!view.friendCode) return;
+                tapLight();
+                void Clipboard.setStringAsync(view.friendCode);
+                setCodeCopied(true);
+                setTimeout(() => setCodeCopied(false), 1600);
+              }}>
+              <Text style={styles.friendCodeHint}>
+                相手に伝えると申請してもらえます
+              </Text>
+              <View style={styles.friendCodeRow}>
+                <Text style={styles.friendCodeValue}>{view.friendCode || '—'}</Text>
+                <View style={styles.copyPill}>
+                  <Feather
+                    name={codeCopied ? 'check' : 'copy'}
+                    size={12}
+                    color={MonoColors.accent}
+                  />
+                  <Text style={styles.copyPillText}>
+                    {codeCopied ? 'コピー済み' : 'コピー'}
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+          </>
+        )}
 
         {/* アカウント情報（認証） */}
         <SectionLabel>アカウント情報</SectionLabel>
@@ -382,15 +450,26 @@ export default function SettingsScreen() {
           />
           {editing === 'time' && !isGuest && (
             <SingleFieldEditor
-              placeholder="20:30"
+              placeholder="例）21:30"
               keyboardType="numbers-and-punctuation"
-              defaultValue={view.preferredTimeOfDay}
               maxLength={5}
+              hint={`24時間表記で入力（現在: ${view.preferredTimeOfDay}）`}
               busy={busy}
               submitLabel="保存"
               onCancel={() => setEditing(null)}
               onSave={saveTime}
             />
+          )}
+
+          {!isGuest && view.notificationEnabled && (
+            <>
+              <Divider />
+              <Pressable style={styles.row} onPress={runTestNotification}>
+                <Feather name="send" size={18} color={MonoColors.inkSoft} />
+                <Text style={[styles.rowLabel, styles.flex]}>テスト通知を送る</Text>
+                <Text style={styles.actionText}>送信</Text>
+              </Pressable>
+            </>
           )}
         </View>
 
@@ -557,6 +636,7 @@ function SingleFieldEditor({
   keyboardType,
   defaultValue = '',
   maxLength,
+  hint,
   busy,
   submitLabel,
   onCancel,
@@ -566,6 +646,7 @@ function SingleFieldEditor({
   keyboardType?: React.ComponentProps<typeof TextInput>['keyboardType'];
   defaultValue?: string;
   maxLength?: number;
+  hint?: string;
   busy: boolean;
   submitLabel: string;
   onCancel: () => void;
@@ -586,6 +667,7 @@ function SingleFieldEditor({
         maxLength={maxLength}
         autoFocus
       />
+      {hint ? <Text style={styles.editorHint}>{hint}</Text> : null}
       <EditorActions
         busy={busy}
         saveLabel={submitLabel}
@@ -731,7 +813,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     overflow: 'hidden',
   },
-  decoGlyphCorner: { position: 'absolute', top: 10, right: 14, fontSize: 15, opacity: 0.7 },
   avatarRing: {
     padding: 4,
     borderRadius: MonoLayout.radiusPill,
@@ -801,6 +882,29 @@ const styles = StyleSheet.create({
   rowLabelStrong: { flex: 1, fontSize: 15, fontWeight: '600', color: MonoColors.inkSoft },
   rowValue: { fontSize: 15, color: MonoColors.ink, marginTop: 2 },
   actionText: { fontSize: 13, fontWeight: '700', color: MonoColors.ink },
+  friendCodeCard: { paddingVertical: 14, paddingHorizontal: 16, gap: 8 },
+  friendCodeHint: { fontSize: 11, color: MonoColors.textSecondary },
+  friendCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  friendCodeValue: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: MonoColors.ink,
+  },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: MonoColors.accentTint,
+    borderRadius: MonoLayout.radiusPill,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+  },
+  copyPillText: { fontSize: 10, fontWeight: '700', color: MonoColors.accent },
   divider: { height: 1, backgroundColor: MonoColors.border, marginLeft: 46 },
 
   warnBadge: {
@@ -820,6 +924,7 @@ const styles = StyleSheet.create({
     backgroundColor: MonoColors.surfaceAlt,
   },
   editorLabel: { fontSize: 12, fontWeight: '600', color: MonoColors.textSecondary },
+  editorHint: { fontSize: 11, color: MonoColors.textMuted, marginTop: -4 },
   editorInput: {
     backgroundColor: MonoColors.surface,
     borderWidth: 1,

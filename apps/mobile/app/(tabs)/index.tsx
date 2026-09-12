@@ -8,19 +8,25 @@
 
 import { Feather } from '@expo/vector-icons';
 import type { User } from '@supabase/supabase-js';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { tapImpact, tapLight } from '@/lib/haptics';
-import { fetchStreakDays } from '@/services/workoutService';
+import { fetchThisWeekFocus } from '@/services/goalService';
+import { fetchHomeStats } from '@/services/workoutService';
+import type { WeekFocus } from '@/types/goal';
+import type { HomeStats } from '@/types/workout';
 import { supabase } from '@/supabase';
+
+const ZERO_STATS: HomeStats = { streakDays: 0, weekMinutes: 0, weekWorkouts: 0 };
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [streak, setStreak] = useState<number | null>(null);
+  const [stats, setStats] = useState<HomeStats>(ZERO_STATS);
+  const [focus, setFocus] = useState<WeekFocus | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -32,15 +38,35 @@ export default function HomeScreen() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_e, session) => {
       if (alive) setUser(session?.user ?? null);
     });
-    fetchStreakDays().then((n) => {
-      if (alive) setStreak(n);
-    });
 
     return () => {
       alive = false;
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  // 画面に戻るたび最新の実績・今週の目標を取得。
+  // 筋トレ保存（fire-and-forget の insert）直後は間に合わないことがあるので、
+  // 少し置いてもう一度取り直す。
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      const refresh = () => {
+        fetchHomeStats().then((s) => {
+          if (alive) setStats(s);
+        });
+        fetchThisWeekFocus().then((f) => {
+          if (alive) setFocus(f);
+        });
+      };
+      refresh();
+      const retries = [1500, 4000].map((ms) => setTimeout(refresh, ms));
+      return () => {
+        alive = false;
+        retries.forEach(clearTimeout);
+      };
+    }, []),
+  );
 
   const nickname =
     (user?.user_metadata?.name as string | undefined) ??
@@ -57,9 +83,6 @@ export default function HomeScreen() {
       <View style={styles.content}>
         {/* ヘッダー */}
         <View style={styles.header}>
-          <View style={styles.brandMark}>
-            <Feather name="star" size={18} color={MonoColors.ink} />
-          </View>
           <View style={styles.headerText}>
             <Text style={styles.hello}>
               {nickname ? `${nickname} さん` : 'ようこそ'}
@@ -88,40 +111,77 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* 実績 */}
-        <View style={styles.stats}>
-          <View style={styles.statCard}>
-            <Text style={styles.statTop}>
-              {MonoGlyph.star} 連続記録
-            </Text>
-            <Text style={styles.statValue}>
-              {streak ?? '—'}
-              <Text style={styles.statUnit}> 日</Text>
-            </Text>
+        {/* 実績・今週の目標・ロードマップ導線を上寄せで配置 */}
+        <View style={styles.middleGroup}>
+          <View style={styles.stats}>
+            <View style={styles.statCard}>
+              <Text style={styles.statTop}>
+                {MonoGlyph.star} 連続記録
+              </Text>
+              <Text style={styles.statValue}>
+                {stats.streakDays}
+                <Text style={styles.statUnit}> 日</Text>
+              </Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statTop}>今週の合計</Text>
+              <Text style={styles.statValue}>
+                {stats.weekMinutes}
+                <Text style={styles.statUnit}> 分</Text>
+              </Text>
+            </View>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statTop}>今週の合計</Text>
-            <Text style={styles.statValue}>
-              38<Text style={styles.statUnit}> 分</Text>
-            </Text>
-          </View>
+
+          {/* 今週の目標（保存済みロードマップがあるときだけ表示） */}
+          {focus && (
+            <Pressable style={styles.focusCard} onPress={() => router.push('/goal')}>
+              <View style={styles.focusHead}>
+                <Text style={styles.focusLabel}>
+                  {focus.isComplete ? MonoGlyph.sparkle + ' プラン達成' : `今週の目標・${focus.currentWeek}週目`}
+                </Text>
+                <Feather name="chevron-right" size={16} color={MonoColors.textMuted} />
+              </View>
+              <Text style={styles.focusTitle} numberOfLines={2}>
+                {focus.isComplete
+                  ? `「${focus.roadmapTitle}」やりきりました！`
+                  : (focus.taskTitle ?? focus.roadmapTitle)}
+              </Text>
+              {!focus.isComplete && focus.frequencyPerWeek != null && focus.frequencyPerWeek > 0 && (
+                <View style={styles.focusProgressWrap}>
+                  <View style={styles.focusProgressTrack}>
+                    <View
+                      style={[
+                        styles.focusProgressFill,
+                        {
+                          width: `${
+                            Math.min(1, stats.weekWorkouts / focus.frequencyPerWeek) * 100
+                          }%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.focusSub}>
+                    週{focus.frequencyPerWeek}回中{Math.min(stats.weekWorkouts, focus.frequencyPerWeek)}回済み
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+
+          {/* 目標ロードマップ導線 */}
+          <Pressable style={styles.goalLink} onPress={() => router.push('/goal')}>
+            <View style={styles.goalIcon}>
+              <Feather name="flag" size={16} color={MonoColors.ink} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.goalTitle}>目標ロードマップ</Text>
+              <Text style={styles.goalSub}>今の目標をチェックする</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={MonoColors.textMuted} />
+          </Pressable>
         </View>
 
-        <View style={styles.spacer} />
-
-        {/* 目標ロードマップ導線 */}
-        <Pressable style={styles.goalLink} onPress={() => router.push('/goal')}>
-          <View style={styles.goalIcon}>
-            <Feather name="flag" size={16} color={MonoColors.ink} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.goalTitle}>目標ロードマップ</Text>
-            <Text style={styles.goalSub}>今の目標をチェックする</Text>
-          </View>
-          <Feather name="chevron-right" size={20} color={MonoColors.textMuted} />
-        </Pressable>
-
-        {/* メインCTA */}
+        {/* メインCTA（画面下に固定。下のメニューバーとの間隔を30に） */}
         <Pressable
           style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           onPress={startWorkout}>
@@ -144,23 +204,17 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   flex: { flex: 1 },
-  spacer: { flex: 1 },
+  middleGroup: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    gap: 25,
+  },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginBottom: 24,
-  },
-  brandMark: {
-    width: 40,
-    height: 40,
-    borderRadius: MonoLayout.radiusPill,
-    borderWidth: 1,
-    borderColor: MonoColors.border,
-    backgroundColor: MonoColors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   headerText: { flex: 1 },
   hello: { fontSize: 12, color: MonoColors.textSecondary },
@@ -200,17 +254,61 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: MonoColors.border,
     borderRadius: MonoLayout.radiusCard,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 18,
   },
   statTop: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: MonoColors.textSecondary,
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  statValue: { fontSize: 28, fontWeight: '800', color: MonoColors.ink },
-  statUnit: { fontSize: 13, fontWeight: '400', color: MonoColors.textSecondary },
+  statValue: { fontSize: 34, fontWeight: '800', color: MonoColors.ink },
+  statUnit: { fontSize: 15, fontWeight: '400', color: MonoColors.textSecondary },
+
+  focusCard: {
+    backgroundColor: MonoColors.surface,
+    borderWidth: 1,
+    borderColor: MonoColors.border,
+    borderRadius: MonoLayout.radiusCard,
+    padding: 20,
+  },
+  focusHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  focusLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: MonoColors.accent,
+    letterSpacing: 0.5,
+  },
+  focusTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: MonoColors.ink,
+    marginTop: 8,
+  },
+  focusSub: {
+    fontSize: 13,
+    color: MonoColors.textSecondary,
+  },
+  focusProgressWrap: {
+    marginTop: 10,
+    gap: 6,
+  },
+  focusProgressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: MonoColors.border,
+    overflow: 'hidden',
+  },
+  focusProgressFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: MonoColors.accent,
+  },
 
   goalLink: {
     flexDirection: 'row',
@@ -222,7 +320,6 @@ const styles = StyleSheet.create({
     borderRadius: MonoLayout.radiusCard,
     paddingVertical: 16,
     paddingHorizontal: 16,
-    marginBottom: 12,
   },
   goalIcon: {
     width: 34,
@@ -240,7 +337,7 @@ const styles = StyleSheet.create({
     borderRadius: MonoLayout.radiusCard,
     paddingVertical: 20,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 30,
   },
   ctaPressed: { opacity: 0.85 },
   ctaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

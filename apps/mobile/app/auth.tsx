@@ -17,9 +17,6 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -34,6 +31,27 @@ import { tapImpact, tapLight } from '@/lib/haptics';
 import { signIn, signUp } from '@/services/authService';
 
 type Mode = 'login' | 'signup';
+type Notice = { tone: 'info' | 'error'; text: string };
+
+/** GoTrue の英語エラーを日本語＋次にやることに置き換える。 */
+function toJaAuthMessage(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('email not confirmed'))
+    return 'メールアドレスが未確認です。届いた確認メールのリンクを開くか、Supabase の Authentication 設定で「Confirm email」をオフにしてください。';
+  if (m.includes('invalid login credentials'))
+    return 'メールアドレスかパスワードが違います。';
+  if (m.includes('already registered') || m.includes('already been registered') || m.includes('user already'))
+    return 'このメールアドレスは登録済みです。上のタブを「ログイン」にしてお試しください。';
+  if (m.includes('password should be at least') || m.includes('password is too short'))
+    return 'パスワードが短すぎます。6文字以上にしてください。';
+  if (m.includes('rate limit') || m.includes('too many') || m.includes('for security purposes'))
+    return '試行が多すぎます。少し時間をおいてからお試しください。';
+  if (m.includes('timeout') || m.includes('タイムアウト') || m.includes('network') || m.includes('failed to fetch'))
+    return '通信に失敗しました。電波・Wi-Fi を確認してもう一度お試しください。';
+  if (m.includes('unable to validate email') || m.includes('invalid format'))
+    return 'メールアドレスの形式が正しくありません。';
+  return raw;
+}
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -44,6 +62,7 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const isSignup = mode === 'signup';
 
@@ -51,28 +70,28 @@ export default function AuthScreen() {
     if (next === mode) return;
     tapLight();
     setMode(next);
+    setNotice(null);
   };
 
-  const validate = () => {
-    if (isSignup && username.trim().length < 2) {
-      Alert.alert('入力エラー', 'ニックネームは2文字以上で入力してください。');
-      return false;
-    }
-    if (!email.trim()) {
-      Alert.alert('入力エラー', 'メールアドレスを入力してください。');
-      return false;
-    }
-    if (password.length < 6) {
-      Alert.alert('入力エラー', 'パスワードは6文字以上で入力してください。');
-      return false;
-    }
-    return true;
+  const validationError = (): string | null => {
+    if (isSignup && username.trim().length < 2) return 'ニックネームは2文字以上で入力してください。';
+    if (!email.trim()) return 'メールアドレスを入力してください。';
+    if (password.length < 6) return 'パスワードは6文字以上で入力してください。';
+    return null;
   };
 
   const handleSubmit = async () => {
+    console.log('[auth] submit', { mode, hasEmail: !!email.trim(), pwLen: password.length });
     tapImpact();
-    if (loading || !validate()) return;
+    if (loading) return;
 
+    const invalid = validationError();
+    if (invalid) {
+      setNotice({ tone: 'error', text: invalid });
+      return;
+    }
+
+    setNotice(null);
     setLoading(true);
     try {
       if (isSignup) {
@@ -82,10 +101,11 @@ export default function AuthScreen() {
           name: username.trim(),
         });
         if (needsEmailConfirm) {
-          Alert.alert(
-            '確認メールを送信しました',
-            'メール内のリンクをタップして登録を完了してください。',
-          );
+          setMode('login');
+          setNotice({
+            tone: 'info',
+            text: `${email.trim()} に確認メールを送りました。メールのリンクを開いてから「ログイン」してください。届かない場合は Supabase の設定で「Confirm email」をオフにできます。`,
+          });
         } else {
           router.replace('/(tabs)');
         }
@@ -94,8 +114,8 @@ export default function AuthScreen() {
         router.replace('/(tabs)');
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : '認証処理に失敗しました。';
-      Alert.alert('エラー', message);
+      const raw = e instanceof Error ? e.message : String(e);
+      setNotice({ tone: 'error', text: toJaAuthMessage(raw) });
     } finally {
       setLoading(false);
     }
@@ -103,13 +123,13 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
+      <ScrollView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+        showsVerticalScrollIndicator={false}>
           {/* ブランドマーク */}
           <View style={styles.brand}>
             <View style={styles.brandMark}>
@@ -186,6 +206,21 @@ export default function AuthScreen() {
               }
             />
 
+            {notice && (
+              <View
+                style={[
+                  styles.notice,
+                  notice.tone === 'error' ? styles.noticeError : styles.noticeInfo,
+                ]}>
+                <Feather
+                  name={notice.tone === 'error' ? 'alert-circle' : 'mail'}
+                  size={15}
+                  color={notice.tone === 'error' ? MonoColors.danger : MonoColors.accent}
+                />
+                <Text style={styles.noticeText}>{notice.text}</Text>
+              </View>
+            )}
+
             <Pressable
               style={({ pressed }) => [
                 styles.primaryButton,
@@ -222,8 +257,7 @@ export default function AuthScreen() {
               </Text>
             </Pressable>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -287,9 +321,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: MonoLayout.screenPadding,
-    paddingVertical: 40,
+    paddingTop: 56,
+    paddingBottom: 48,
   },
 
   brand: {
@@ -358,6 +392,19 @@ const styles = StyleSheet.create({
   },
 
   form: { gap: MonoLayout.gap },
+
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: MonoLayout.radiusControl,
+    borderWidth: 1,
+  },
+  noticeInfo: { backgroundColor: MonoColors.accentTint, borderColor: MonoColors.border },
+  noticeError: { backgroundColor: MonoColors.dangerTint, borderColor: MonoColors.border },
+  noticeText: { flex: 1, fontSize: 12, lineHeight: 17, color: MonoColors.inkSoft },
+
   field: { gap: 8 },
   fieldLabel: {
     fontSize: 13,

@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,13 +23,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { goalDraft } from '@/lib/goal-draft';
 import { tapImpact } from '@/lib/haptics';
-import { fetchCurrentRoadmap } from '@/services/goalService';
+import { fetchCurrentRoadmap, saveRoadmap } from '@/services/goalService';
 import type { Roadmap } from '@/types/goal';
 
 export default function GoalRoadmapScreen() {
   const router = useRouter();
   const [roadmap, setRoadmap] = useState<Roadmap | null>(() => goalDraft.getRoadmap());
   const [loading, setLoading] = useState(roadmap === null);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     if (roadmap) return;
@@ -67,6 +69,27 @@ export default function GoalRoadmapScreen() {
     tapImpact();
     goalDraft.reset();
     router.push('/goal/create');
+  };
+
+  const start = async () => {
+    if (!roadmap || starting) return;
+    tapImpact();
+    setStarting(true);
+    try {
+      await saveRoadmap(roadmap);
+      goalDraft.reset();
+      router.replace('/(tabs)');
+    } catch (err) {
+      console.warn('[goal] ロードマップの保存に失敗しました:', err);
+      const msg = err instanceof Error ? err.message : '';
+      Alert.alert(
+        '保存に失敗しました',
+        msg.includes('AUTH_REQUIRED')
+          ? 'ログインすると目標が保存され、他の端末でも見られるようになります。'
+          : 'もう一度お試しください。',
+      );
+      setStarting(false);
+    }
   };
 
   return (
@@ -112,13 +135,22 @@ export default function GoalRoadmapScreen() {
           })}
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={() => router.replace('/(tabs)')}>
+        <Pressable
+          style={[styles.primaryButton, starting && styles.primaryButtonDisabled]}
+          onPress={start}
+          disabled={starting}>
           <View style={styles.primaryRow}>
-            <Feather name="star" size={15} color={MonoColors.onInk} />
-            <Text style={styles.primaryText}>この目標ではじめる</Text>
+            {starting ? (
+              <ActivityIndicator size="small" color={MonoColors.onInk} />
+            ) : (
+              <Feather name="star" size={15} color={MonoColors.onInk} />
+            )}
+            <Text style={styles.primaryText}>
+              {starting ? '保存しています…' : 'この目標ではじめる'}
+            </Text>
           </View>
         </Pressable>
-        <Pressable style={styles.ghostButton} onPress={regenerate}>
+        <Pressable style={styles.ghostButton} onPress={regenerate} disabled={starting}>
           <Text style={styles.ghostText}>作り直す</Text>
         </Pressable>
       </ScrollView>
@@ -241,6 +273,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 28,
   },
+  primaryButtonDisabled: { opacity: 0.7 },
   primaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   primaryText: {
     color: MonoColors.onInk,

@@ -2,8 +2,9 @@
  * フレンド一覧ダッシュボード（"/friends"）
  * -------------------------------------------------------------
  * ・オンライン状況（Supabase Realtime Presence）
- * ・継続日数ランキング ＋ サボり具合をポップに可視化
- * ・フレンド申請の送信（ID指定）／届いた申請の承認・拒否
+ * ・継続日数ランキング ＋ 継続度に応じた応援メッセージ
+ * ・フレンド申請の送信（フレンドコード）／届いた申請の承認・拒否
+ * ・フレンドカードを長押しで解除
  *
  * モノトーン基調 ＋ 大人カワイイ（枠線のあしらい・連続達成の星）。
  * グラフ類は追加ライブラリ不要で動くよう Reanimated + View で実装。
@@ -11,12 +12,16 @@
  */
 
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -37,11 +42,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import { notifySuccess, tapImpact, tapLight } from '@/lib/haptics';
+import { fetchMyFriendCode } from '@/services/authService';
 import {
   acceptFriendRequest,
   fetchFriendRequests,
   fetchFriends,
   rejectFriendRequest,
+  removeFriend,
   sendFriendRequest,
   subscribeToFriendRequests,
   subscribeToPresence,
@@ -172,11 +179,33 @@ function FriendsDashboard() {
     }
   };
 
+  const handleRemove = (friend: Friend) => {
+    if (friend.is_self) return;
+    Alert.alert('フレンドを解除', `${friend.username} さんを解除しますか？`, [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '解除する',
+        style: 'destructive',
+        onPress: async () => {
+          tapImpact();
+          setFriends((prev) => prev.filter((f) => f.user_id !== friend.user_id));
+          try {
+            await removeFriend(friend.user_id);
+          } catch (e) {
+            console.warn('[friends] 解除に失敗しました', e);
+            await load(); // 失敗したら一覧を元に戻す
+          }
+        },
+      },
+    ]);
+  };
+
   const ranked = useMemo(
     () => [...friends].sort((a, b) => b.streak_days - a.streak_days),
     [friends],
   );
-  const onlineCount = ranked.filter((f) => online[f.user_id]).length;
+  const friendsOnly = ranked.filter((f) => !f.is_self);
+  const onlineCount = friendsOnly.filter((f) => online[f.user_id]).length;
 
   if (loading) {
     return (
@@ -215,7 +244,7 @@ function FriendsDashboard() {
         }>
         <Text style={styles.summaryLine}>
           {MonoGlyph.sparkle} いま {onlineCount} 人がオンライン・
-          {ranked.length} 人と励まし合い中
+          {friendsOnly.length} 人と励まし合い中
         </Text>
 
         {/* 届いているフレンド申請 */}
@@ -241,7 +270,12 @@ function FriendsDashboard() {
 
         {/* ランキング */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>継続ランキング</Text>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionLabel}>継続ランキング</Text>
+            {friendsOnly.length > 0 && (
+              <Text style={styles.sectionHint}>長押しで解除</Text>
+            )}
+          </View>
           <View style={{ gap: 12 }}>
             {ranked.map((friend, i) => (
               <FriendCard
@@ -249,6 +283,7 @@ function FriendsDashboard() {
                 friend={friend}
                 rank={i + 1}
                 online={online[friend.user_id]}
+                onRemove={() => handleRemove(friend)}
               />
             ))}
           </View>
@@ -272,19 +307,25 @@ function FriendCard({
   friend,
   rank,
   online,
+  onRemove,
 }: {
   friend: Friend;
   rank: number;
   online?: { last_active_at: string };
+  onRemove: () => void;
 }) {
   const isOnline = !!online;
   const lastActive = online?.last_active_at ?? friend.last_active_at;
   const stars = Math.min(5, Math.floor(friend.streak_days / STAR_PER_DAYS));
   const goal = Math.max(friend.best_streak_days, STAR_PER_DAYS);
   const progress = Math.min(1, friend.streak_days / goal);
+  const status = friendStatus(friend, friend.is_self);
 
   return (
-    <View style={[styles.friendCard, rank === 1 && styles.friendCardTop]}>
+    <Pressable
+      style={[styles.friendCard, rank === 1 && styles.friendCardTop]}
+      onLongPress={friend.is_self ? undefined : onRemove}
+      delayLongPress={350}>
       {/* ランク */}
       <View style={[styles.rankBadge, rank === 1 && styles.rankBadgeTop]}>
         {rank === 1 ? (
@@ -307,7 +348,11 @@ function FriendCard({
           <Text style={styles.friendName} numberOfLines={1}>
             {friend.username}
           </Text>
-          {isOnline ? (
+          {friend.is_self ? (
+            <View style={styles.selfBadge}>
+              <Text style={styles.selfBadgeText}>あなた</Text>
+            </View>
+          ) : isOnline ? (
             <View style={styles.onlineBadge}>
               <View style={styles.onlineDot} />
               <Text style={styles.onlineText}>Online</Text>
@@ -317,17 +362,8 @@ function FriendCard({
           )}
         </View>
 
-        {/* 継続 / サボり */}
-        <Text style={styles.streakLine}>
-          {friend.streak_days > 0 ? (
-            <>
-              <Text style={styles.streakNum}>🔥{friend.streak_days}</Text>
-              <Text style={styles.streakUnit}>日連続！</Text>
-            </>
-          ) : (
-            <Text style={styles.restText}>{restMessage(friend.rest_days)}</Text>
-          )}
-        </Text>
+        {/* 継続度に応じた見出し */}
+        <Text style={styles.streakLine}>{status.headline}</Text>
 
         {friend.streak_days > 0 && stars > 0 && (
           <Text style={styles.starRow}>
@@ -337,17 +373,95 @@ function FriendCard({
         )}
 
         <StreakBar progress={progress} highlight={rank === 1} />
-        <Text style={styles.barCaption}>
-          {friend.streak_days > 0
-            ? `自己ベスト ${friend.best_streak_days}日まで あと ${Math.max(
-                0,
-                friend.best_streak_days - friend.streak_days,
-              )}日`
-            : restMessage(friend.rest_days)}
+        <Text
+          style={[styles.barCaption, status.vibe === 'nudge' && styles.nudgeCaption]}>
+          {status.caption}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
+}
+
+/* ============================================================
+ * 継続度に応じた表示（見出し＋ひとこと＋トーン）
+ * ========================================================== */
+
+type FriendVibe = 'streak' | 'rest' | 'nudge' | 'fresh';
+
+function friendStatus(
+  f: Friend,
+  isSelf: boolean,
+): {
+  headline: React.ReactNode;
+  caption: string;
+  vibe: FriendVibe;
+} {
+  const s = f.streak_days;
+  const rest = f.rest_days;
+
+  // --- 継続中 ---
+  if (s > 0) {
+    const gap = Math.max(0, f.best_streak_days - s);
+    let caption: string;
+    if (s >= f.best_streak_days) caption = '自己ベスト更新中！🎉';
+    else if (gap <= 3) caption = `自己ベストまで あと ${gap}日`;
+    else if (s === 1) caption = '継続1日目 ✨';
+    else if (s <= 3) caption = 'いい調子！3日の壁を越えよう';
+    else if (s <= 6) caption = '1週間までもう少し 💪';
+    else if (s <= 13) caption = '習慣化ゾーン。えらい！';
+    else if (s <= 29) caption = 'すごい継続力 ⭐️';
+    else caption = '殿堂入り 👑';
+    return {
+      headline: (
+        <>
+          <Text style={styles.streakNum}>🔥{s}</Text>
+          <Text style={styles.streakUnit}>日連続！</Text>
+        </>
+      ),
+      caption,
+      vibe: 'streak',
+    };
+  }
+
+  // --- まだ記録なし ---
+  if (rest == null) {
+    return {
+      headline: <Text style={styles.restText}>まだ記録がないみたい</Text>,
+      caption: isSelf ? 'はじめてみよう 🌱' : 'いっしょに始めよ 🌱',
+      vibe: 'fresh',
+    };
+  }
+
+  // --- サボり中 ---
+  let head: string;
+  let caption: string;
+  let vibe: FriendVibe = 'rest';
+  if (rest <= 0) {
+    head = '今日は動いた！えらい ✨';
+    caption = 'この調子で継続してこ';
+  } else if (rest <= 3) {
+    head = `サボり${rest}日目`;
+    caption = rest === 1 ? 'まだ取り戻せる！' : 'そろそろ戻ろっか 🌱';
+  } else if (rest <= 6) {
+    head = `サボり${rest}日目`;
+    caption = isSelf ? '今日動いてみる？ 📣' : '誘ってみよう！ 📣';
+    vibe = 'nudge';
+  } else if (rest <= 13) {
+    head = '1週間お休み中 🍵';
+    caption = isSelf ? 'ひさしぶりに動いてみない？' : 'ひさしぶりに声かけてみる？';
+    vibe = 'nudge';
+  } else if (rest <= 29) {
+    head = `${rest}日ぶり…`;
+    caption = isSelf ? 'また始めよう、いつでも' : 'また一緒にやれたらいいね';
+  } else {
+    head = 'しばらくお休み中';
+    caption = 'いつでも戻ってこれるよ';
+  }
+  return {
+    headline: <Text style={styles.restText}>{head}</Text>,
+    caption,
+    vibe,
+  };
 }
 
 /* ============================================================
@@ -483,27 +597,49 @@ function AddFriendModal({
   visible: boolean;
   onClose: () => void;
 }) {
-  const [id, setId] = useState('');
+  const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [myCode, setMyCode] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    let alive = true;
+    fetchMyFriendCode().then((c) => {
+      if (alive) setMyCode(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [visible]);
 
   const close = () => {
-    setId('');
+    setCode('');
     setResult(null);
+    setCopied(false);
     onClose();
   };
 
+  const copyMyCode = async () => {
+    if (!myCode) return;
+    tapLight();
+    await Clipboard.setStringAsync(myCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
   const submit = async () => {
-    if (!id.trim() || sending) return;
+    if (!code.trim() || sending) return;
     tapImpact();
     setSending(true);
     setResult(null);
-    const res = await sendFriendRequest(id);
+    const res = await sendFriendRequest(code);
     setSending(false);
     if (res.ok) {
       notifySuccess();
       setResult('申請を送りました ✨');
-      setId('');
+      setCode('');
     } else {
       setResult(REASON_TEXT[res.reason]);
     }
@@ -511,21 +647,41 @@ function AddFriendModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : undefined}>
+        <Pressable style={styles.backdrop} onPress={close}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>フレンドを追加 {MonoGlyph.ribbon}</Text>
-          <Text style={styles.sheetSub}>相手のユーザーIDを入力して申請します</Text>
+          <Text style={styles.sheetSub}>相手のフレンドコードを入力して申請します</Text>
+
+          {/* 自分のコード（共有用） */}
+          <Pressable style={styles.myCodeRow} onPress={copyMyCode}>
+            <View style={styles.flex}>
+              <Text style={styles.myCodeLabel}>あなたのフレンドコード</Text>
+              <Text style={styles.myCodeValue}>{myCode || '—'}</Text>
+            </View>
+            <View style={styles.copyPill}>
+              <Feather
+                name={copied ? 'check' : 'copy'}
+                size={13}
+                color={MonoColors.accent}
+              />
+              <Text style={styles.copyPillText}>{copied ? 'コピー済み' : 'コピー'}</Text>
+            </View>
+          </Pressable>
 
           <View style={styles.searchRow}>
             <Feather name="search" size={18} color={MonoColors.textMuted} />
             <TextInput
               style={styles.searchInput}
-              placeholder="例）ユーザーID / ニックネーム"
+              placeholder="例）ZBR-8A2K7X"
               placeholderTextColor={MonoColors.textMuted}
-              value={id}
-              onChangeText={setId}
-              autoCapitalize="none"
+              value={code}
+              onChangeText={(t) => setCode(t.toUpperCase())}
+              autoCapitalize="characters"
               autoCorrect={false}
               onSubmitEditing={submit}
               returnKeyType="send"
@@ -535,9 +691,9 @@ function AddFriendModal({
           {result && <Text style={styles.resultText}>{result}</Text>}
 
           <Pressable
-            style={[styles.sendBtn, (sending || !id.trim()) && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (sending || !code.trim()) && styles.sendBtnDisabled]}
             onPress={submit}
-            disabled={sending || !id.trim()}>
+            disabled={sending || !code.trim()}>
             {sending ? (
               <ActivityIndicator color={MonoColors.onInk} size="small" />
             ) : (
@@ -551,8 +707,9 @@ function AddFriendModal({
           <Pressable onPress={close} hitSlop={8} style={styles.cancelLink}>
             <Text style={styles.cancelLinkText}>閉じる</Text>
           </Pressable>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -562,19 +719,12 @@ function AddFriendModal({
  * ========================================================== */
 
 const REASON_TEXT: Record<string, string> = {
-  not_found: 'そのIDのユーザーが見つかりませんでした',
+  not_found: 'そのフレンドコードのユーザーが見つかりませんでした',
   already_friend: 'すでにフレンドです ✨',
   already_requested: 'すでに申請済みです',
-  self: '自分には申請できません',
+  self: '自分のコードです',
   unknown: 'うまくいきませんでした。もう一度お試しください',
 };
-
-function restMessage(days: number): string {
-  if (days <= 0) return '今日はもう動いた！えらい ✨';
-  if (days === 1) return '1日おやすみ中 ☁️';
-  if (days <= 3) return `${days}日おやすみ中 🌱 そろそろ戻ろっか`;
-  return `${days}日ぶり、いっしょに再スタートしよ 🍰`;
-}
 
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -658,6 +808,17 @@ const styles = StyleSheet.create({
   },
 
   section: { marginBottom: 24 },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHint: {
+    fontSize: 10,
+    color: MonoColors.textMuted,
+    marginRight: 4,
+    marginBottom: 12,
+  },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -749,6 +910,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   lastActive: { fontSize: 11, color: MonoColors.textMuted },
+  selfBadge: {
+    backgroundColor: MonoColors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: MonoColors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: MonoLayout.radiusPill,
+    flex: 0,
+  },
+  selfBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: MonoColors.inkSoft,
+    letterSpacing: 0.5,
+  },
 
   streakLine: { marginTop: 2 },
   streakNum: { fontSize: 15, fontWeight: '800', color: MonoColors.ink },
@@ -772,6 +948,7 @@ const styles = StyleSheet.create({
   },
   barFillTop: { backgroundColor: GLOW_GOLD },
   barCaption: { fontSize: 10, color: MonoColors.textMuted, marginTop: 4 },
+  nudgeCaption: { color: MonoColors.accent, fontWeight: '700' },
 
   /* アバター */
   glowRing: {
@@ -842,8 +1019,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: MonoColors.textSecondary,
     marginTop: 6,
-    marginBottom: 20,
+    marginBottom: 16,
   },
+
+  flex: { flex: 1 },
+  myCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    alignSelf: 'stretch',
+    backgroundColor: MonoColors.accentTint,
+    borderRadius: MonoLayout.radiusControl,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  myCodeLabel: { fontSize: 10, fontWeight: '600', color: MonoColors.accent },
+  myCodeValue: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: MonoColors.ink,
+    marginTop: 3,
+  },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: MonoColors.surface,
+    borderRadius: MonoLayout.radiusPill,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  copyPillText: { fontSize: 11, fontWeight: '700', color: MonoColors.accent },
+
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',

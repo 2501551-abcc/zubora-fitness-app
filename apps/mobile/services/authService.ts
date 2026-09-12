@@ -16,6 +16,22 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { supabase } from '@/supabase';
 import type { AppUser, TimeString } from '@/types/db';
 
+/**
+ * 端末の電波状況などで fetch が固まったままにならないよう、認証系の通信に上限時間を設ける。
+ * （固まると画面のローディングが戻らず「ボタンが効かない」ように見えるため）
+ */
+function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('通信がタイムアウトしました。電波・Wi-Fi を確認してもう一度お試しください。')),
+        ms,
+      ),
+    ),
+  ]);
+}
+
 /* ---------------- サインアップ ---------------- */
 
 export type SignUpParams = {
@@ -32,16 +48,18 @@ export type SignUpParams = {
  * メール確認が有効な場合 `needsEmailConfirm = true`（確認リンクで確定）。
  */
 export async function signUp(params: SignUpParams): Promise<{ needsEmailConfirm: boolean }> {
-  const { data, error } = await supabase.auth.signUp({
-    email: params.email.trim(),
-    password: params.password,
-    options: {
-      data: {
-        name: params.name.trim(),
-        preferred_time_of_day: params.preferredTimeOfDay ?? '20:00',
+  const { data, error } = await withTimeout(
+    supabase.auth.signUp({
+      email: params.email.trim(),
+      password: params.password,
+      options: {
+        data: {
+          name: params.name.trim(),
+          preferred_time_of_day: params.preferredTimeOfDay ?? '20:00',
+        },
       },
-    },
-  });
+    }),
+  );
   if (error) throw error;
   return { needsEmailConfirm: !!data.user && !data.session };
 }
@@ -49,10 +67,12 @@ export async function signUp(params: SignUpParams): Promise<{ needsEmailConfirm:
 /* ---------------- ログイン ---------------- */
 
 export async function signIn(email: string, password: string): Promise<Session> {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
-    password,
-  });
+  const { data, error } = await withTimeout(
+    supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    }),
+  );
   if (error) throw error;
   return data.session;
 }
@@ -110,13 +130,14 @@ function fallbackNameFromUser(user: {
   return `user_${user.id.replace(/-/g, '').slice(0, 8)}`;
 }
 
+const isMissingColumn = (msg: string | undefined, col: string) =>
+  !!msg && (msg.includes(col) || msg.includes('schema cache'));
+
 /**
  * 設定画面からのプロフィール更新。
- * users を更新し、auth の user_metadata にも name をミラー
- * （プロフィール行取得前にヘッダー等で使うフォールバック用）。
- *
- * users 行が存在しない場合（handle_new_user トリガー未適用 / トリガー導入前に
- * 作られた既存ユーザー）は、まず最小項目で行を作ってから更新する。
+ * ・users テーブルを更新（`avatar_emoji` 列が無い旧スキーマでも壊れないよう自動リトライ）
+ * ・行がまだ無ければ最小項目で作成
+ * ・表示名／アイコンは user_metadata にもミラー（行取得前の表示フォールバック用）
  */
 export async function updateProfile(patch: ProfileUpdate): Promise<AppUser> {
   const {
@@ -124,24 +145,38 @@ export async function updateProfile(patch: ProfileUpdate): Promise<AppUser> {
   } = await supabase.auth.getUser();
   if (!user) throw new Error('AUTH_REQUIRED');
 
-  // users 行が無ければ作成（既存行は ignoreDuplicates=true で触らない）
-  const { error: ensureError } = await supabase
-    .from('users')
-    .upsert({ id: user.id, name: fallbackNameFromUser(user) }, {
-      onConflict: 'id',
-      ignoreDuplicates: true,
-    });
-  if (ensureError) throw ensureError;
+  const runUpdate = (p: ProfileUpdate) =>
+    supabase.from('users').update(p).eq('id', user.id).select('*');
 
-  const { data, error } = await supabase
-    .from('users')
-    .update(patch)
-    .eq('id', user.id)
-    .select()
-    .single();
-  if (error) throw error;
+  let res = await runUpdate(patch);
+  if (res.error && isMissingColumn(res.error.message, 'avatar_emoji')) {
+    const { avatar_emoji: _omit, ...rest } = patch;
+    res =
+      Object.keys(rest).length > 0
+        ? await runUpdate(rest)
+        : await supabase.from('users').select('*').eq('id', user.id);
+  }
+  if (res.error) throw res.error;
 
-  // 一部項目は user_metadata にもミラー（プロフィール行取得前の表示フォールバック用）
+  let row = (res.data as AppUser[] | null)?.[0];
+
+  // users 行がまだ無い（0件更新）なら作成してから読み直す
+  if (!row) {
+    const seed: Record<string, unknown> = {
+      id: user.id,
+      name: fallbackNameFromUser(user),
+      ...patch,
+    };
+    let ins = await supabase.from('users').insert(seed);
+    if (ins.error && isMissingColumn(ins.error.message, 'avatar_emoji')) {
+      delete seed.avatar_emoji;
+      ins = await supabase.from('users').insert(seed);
+    }
+    if (ins.error && !ins.error.message.includes('duplicate key')) throw ins.error;
+    const back = await supabase.from('users').select('*').eq('id', user.id).single();
+    row = back.data as AppUser;
+  }
+
   const mirror: Record<string, unknown> = {};
   if (patch.name !== undefined) mirror.name = patch.name;
   if (patch.avatar_url !== undefined) mirror.avatar_url = patch.avatar_url;
@@ -150,7 +185,7 @@ export async function updateProfile(patch: ProfileUpdate): Promise<AppUser> {
     await supabase.auth.updateUser({ data: mirror }).catch(() => undefined);
   }
 
-  return data as AppUser;
+  return row;
 }
 
 /* ---------------- 設定画面用のまとめ取得 / 更新 ---------------- */
@@ -171,7 +206,23 @@ export type AccountInfo = {
   preferredTimeOfDay: string;
   /** 通知を受け取るか */
   notificationEnabled: boolean;
+  /** フレンド申請に使う固有コード（例: ZBR-8A2K7X）。未取得なら '' */
+  friendCode: string;
 };
+
+/**
+ * 自分のフレンドコードを取得（無ければサーバー側で採番・保存）。
+ * 未ログイン時は ''。
+ */
+export async function fetchMyFriendCode(): Promise<string> {
+  try {
+    const { data, error } = await supabase.rpc('get_my_friend_code');
+    if (error || typeof data !== 'string') return '';
+    return data;
+  } catch {
+    return '';
+  }
+}
 
 /** 設定画面の初期表示に必要な情報をまとめて取得 */
 export async function getAccountInfo(): Promise<AccountInfo | null> {
@@ -183,15 +234,15 @@ export async function getAccountInfo(): Promise<AccountInfo | null> {
   const meta = user.user_metadata ?? {};
   let profile: Partial<AppUser> = {};
   try {
-    const { data } = await supabase
-      .from('users')
-      .select('name, avatar_url, avatar_emoji, preferred_time_of_day, notification_enabled')
-      .eq('id', user.id)
-      .single();
+    // select('*') にして、旧スキーマで列が足りなくても壊れないようにする
+    const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
     if (data) profile = data as Partial<AppUser>;
   } catch {
     // users 行がまだ無い場合は metadata / 既定値で表示
   }
+
+  // 行に friend_code が無い場合だけ RPC で採番（通常は 1 回のクエリで済む）
+  const friendCode = profile.friend_code || (await fetchMyFriendCode());
 
   return {
     userId: user.id,
@@ -203,6 +254,7 @@ export async function getAccountInfo(): Promise<AccountInfo | null> {
     avatarUrl: profile.avatar_url ?? null,
     preferredTimeOfDay: toHm(profile.preferred_time_of_day ?? '20:00'),
     notificationEnabled: profile.notification_enabled ?? true,
+    friendCode,
   };
 }
 

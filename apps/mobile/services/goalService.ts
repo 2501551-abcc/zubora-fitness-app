@@ -1,45 +1,119 @@
 /**
- * 目標ロードマップのデータ層（バックエンド接合部）
+ * 目標ロードマップのデータ層
  * =====================================================================
- * ★バックエンド担当へ★
- * UI はこのファイルの関数シグネチャだけに依存しています。
- * 現状はスタブ（モックのツリーを返す）ので、フロント単体で通しで動きます。
+ * UI（app/goal/*）はこのファイルの関数シグネチャだけに依存しています。
  *
- * generateRoadmap() の中身を Gemini 呼び出しに差し替えれば結合完了です。
- *   - 設計ドラフト セクション5 のシステムプロンプトを使用。
- *   - ★重要★ Gemini API は response_mime_type だけでなく、必ず
- *     response_schema（types/goal.ts の Roadmap 構造）を明示的に渡すこと。
- *     指定しないと JSON が壊れるケースが実検証で確認されています。
- *   - 採用モデル：gemini-3.5-flash（レイテンシ約30秒。UI側は生成中画面で吸収）。
+ * generateRoadmap()  … 前提10問 + 大目標 → Gemini で目標ツリーを一括生成
+ *   - 設計: docs/goal-roadmap-design.md
+ *   - キー(EXPO_PUBLIC_GEMINI_API_KEY)が無いときはモックのツリーを返す（開発用）
+ *   - 生成失敗は throw（generating.tsx がリトライ UI を出す）
+ *
+ * saveRoadmap() / fetchCurrentRoadmap() … 「この目標ではじめる」で確定したロードマップの保存/取得
+ *   - Supabase RPC（save_roadmap / get_current_roadmap）で永続化。
+ *     docs/goal-roadmap-persistence-spec.md 通りの契約（goal_trees/milestones/tasks, RLS で本人のみ）。
+ *     端末をまたいでも同じロードマップが見える。
+ *   - 未ログインだと RPC が AUTH_REQUIRED を投げる（saveRoadmap は throw、
+ *     fetchCurrentRoadmap は catch して null＝「まだ目標なし」表示にする）。
+ *
+ * fetchThisWeekFocus() … ホーム画面用。保存済みロードマップの「今週やるタスク」を1件返す
+ *   - RPC: get_this_week_focus（現在週 = goal_trees.created_at からの経過週）
  * =====================================================================
  */
 
-import type { Roadmap, RoadmapInput } from '@/types/goal';
+import { buildRoadmapPrompt } from '@/lib/goal-prompt';
+import { callGeminiForRoadmap } from '@/lib/gemini-roadmap';
+import { normalizeRoadmap } from '@/lib/normalize-roadmap';
+import { supabase } from '@/supabase';
+import type { Roadmap, RoadmapInput, WeekFocus } from '@/types/goal';
+
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY?.trim() ?? '';
 
 /**
  * 前提入力から目標ツリーを生成する。
- * TODO(backend): ここを Gemini API 呼び出しに差し替える。
- *   1. 設計ドラフト セクション5 のシステムプロンプトに入力を差し込む
- *   2. response_schema に Roadmap 構造を渡して構造化出力を強制
- *   3. 返ってきた JSON をそのまま Roadmap として返す
- * 現状は入力に応じてそれっぽいモックを返す（約1.2秒の疑似待ち付き）。
+ * キーが設定されていれば Gemini、なければモック。
  */
 export async function generateRoadmap(input: RoadmapInput): Promise<Roadmap> {
-  await delay(1200); // 生成中画面の確認用のダミー待ち（本番は約30秒）
-  return buildMockRoadmap(input);
+  if (!GEMINI_API_KEY) {
+    console.warn('[goalService] EXPO_PUBLIC_GEMINI_API_KEY 未設定。モックのロードマップを返します。');
+    await delay(1200);
+    return buildMockRoadmap(input);
+  }
+
+  const prompt = buildRoadmapPrompt(input);
+  // スキーマ不一致・JSON 破損は 1 回だけ自動リトライ（設計 §7）
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const raw = await callGeminiForRoadmap(prompt, GEMINI_API_KEY);
+      return normalizeRoadmap(raw, input);
+    } catch (e) {
+      lastErr = e;
+      const kind = (e as { kind?: string })?.kind;
+      // ネットワーク/HTTP/ブロックは即 throw（リトライしても無駄 or 課金増）
+      if (kind === 'network' || kind === 'http' || kind === 'blocked') break;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('ロードマップ生成に失敗しました');
+}
+
+/**
+ * 「この目標ではじめる」で確定したロードマップを保存する。
+ * 呼び出しユーザーの既存ロードマップは非アクティブ化され、この内容が新しい「現在の目標」になる。
+ * 未ログインだと AUTH_REQUIRED で reject するので、呼び出し側でログイン導線を出すこと。
+ */
+export async function saveRoadmap(roadmap: Roadmap): Promise<void> {
+  const { error } = await supabase.rpc('save_roadmap', { p_roadmap: roadmap });
+  if (error) throw error;
 }
 
 /**
  * 保存済みのロードマップを取得する（目標画面の初期表示用）。
- * TODO(backend): Supabase 等から現在のツリーを取得。未作成なら null。
- * 現状はデモ用のモックを返す。
+ * 未保存 / 未ログイン / 取得失敗なら null（"まだ目標がありません" 表示になる）。
  */
 export async function fetchCurrentRoadmap(): Promise<Roadmap | null> {
-  await delay(300);
-  return buildMockRoadmap({
-    goal_text: '3ヶ月で腹筋を割りたい',
-    target_period_weeks: 12,
-  } as RoadmapInput);
+  try {
+    const { data, error } = await supabase.rpc('get_current_roadmap');
+    if (error) throw error;
+    return (data as Roadmap | null) ?? null;
+  } catch (err) {
+    console.warn('[goalService] 保存済みロードマップの取得に失敗しました:', err);
+    return null;
+  }
+}
+
+/**
+ * ホーム画面用「今週の目標」を取得する。
+ * ロードマップ未保存 / 未ログイン / 取得失敗なら null（ホーム側は非表示にする）。
+ */
+export async function fetchThisWeekFocus(): Promise<WeekFocus | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_this_week_focus');
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as {
+      roadmap_title: string;
+      current_week: number;
+      target_period_weeks: number;
+      is_complete: boolean;
+      milestone_title: string | null;
+      task_title: string | null;
+      task_description: string | null;
+      frequency_per_week: number | null;
+    };
+    return {
+      roadmapTitle: row.roadmap_title,
+      currentWeek: row.current_week,
+      targetPeriodWeeks: row.target_period_weeks,
+      isComplete: row.is_complete,
+      milestoneTitle: row.milestone_title,
+      taskTitle: row.task_title,
+      taskDescription: row.task_description,
+      frequencyPerWeek: row.frequency_per_week,
+    };
+  } catch (err) {
+    console.warn('[goalService] 今週の目標の取得に失敗しました:', err);
+    return null;
+  }
 }
 
 /* ---------- 以下はスタブ用のダミー生成（バックエンド実装時は不要） ---------- */

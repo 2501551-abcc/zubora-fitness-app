@@ -11,12 +11,14 @@
 import { DrumRollPicker, type DrumRollItem } from '@/components/workout/drum-roll-picker';
 import { WorkoutColors, WorkoutLayout } from '@/constants/workout-theme';
 import { tapImpact } from '@/lib/haptics';
+import { syncDailyReminder } from '@/lib/reminders';
 import { getDurationOptions } from '@/services/workoutService';
 import { LEVEL_LABELS, type WorkoutLevel } from '@/types/workout';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+<<<<<<< HEAD
 
 // ★ 1. expo-notifications のインポート
 import * as Notifications from 'expo-notifications';
@@ -32,6 +34,8 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
+=======
+>>>>>>> main
 
 /** 開いた瞬間から自動スタートまでの秒数 */
 const PREP_SECONDS = 15;
@@ -40,6 +44,7 @@ const DEFAULT_MINUTES = 15;
 
 const LEVELS: WorkoutLevel[] = ['easy', 'normal', 'hard'];
 
+<<<<<<< HEAD
 // ★ 3. 通知セット関数（修正版）
 const scheduleNextWorkoutNotification = async () => {
   try {
@@ -65,6 +70,8 @@ const scheduleNextWorkoutNotification = async () => {
   }
 };
 
+=======
+>>>>>>> main
 export default function PrepareScreen() {
   const router = useRouter();
 
@@ -85,44 +92,15 @@ export default function PrepareScreen() {
 
   const startedRef = useRef(false);
 
-// ★ 4. 初期化処理（権限取得 ＋ Android用チャンネル作成）
-  useEffect(() => {
-    async function setupNotifications() {
-      // Androidの場合は通知チャンネルの設定が必要
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF2366',
-        });
-      }
-
-      // 権限の確認と要求
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== 'granted') {
-        console.log('⚠️ 通知権限が拒否されました');
-      }
-    }
-
-    setupNotifications();
-  }, []);
-
   // 筋トレ画面へ遷移（自動 / 手動どちらからも呼ばれる。二重遷移をガード）
   const goToWorkout = useCallback(
-    async (manual: boolean) => {
+    (manual: boolean) => {
       if (startedRef.current) return;
       startedRef.current = true;
       if (manual) tapImpact();
 
-      // ★ 5. 【最重要】ここで通知予約関数を実行！
-      await scheduleNextWorkoutNotification();
+      // 設定値に合わせて毎日のリマインドを予約し直す（ブロックしない）
+      void syncDailyReminder();
 
       router.replace({
         pathname: '/workout/session',
@@ -135,20 +113,22 @@ export default function PrepareScreen() {
     [router],
   );
 
-  // 15秒カウントダウン。0になったら自動スタート。
+  // 15秒カウントダウン。setState の更新関数は副作用を起こさない純粋な形に。
   useEffect(() => {
     const id = setInterval(() => {
-      setPrepLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(id);
-          goToWorkout(false);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setPrepLeft((prev) => Math.max(0, prev - 1));
     }, 1000);
     return () => clearInterval(id);
-  }, [goToWorkout]);
+  }, []);
+
+  // 0秒になったら自動スタート。コミット後の useEffect で行うことで、
+  // 「別コンポーネントのレンダー中に setState」警告（router.replace が
+  // NavigationContainer を更新するため）を避ける。
+  useEffect(() => {
+    if (prepLeft === 0) {
+      goToWorkout(false);
+    }
+  }, [prepLeft, goToWorkout]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>

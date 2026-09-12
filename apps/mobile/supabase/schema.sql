@@ -38,6 +38,8 @@ alter table public.users add column if not exists is_online    boolean     not n
 alter table public.users add column if not exists last_seen    timestamptz not null default now();
 -- アバター絵文字（画像未設定時のフォールバック。フレンドからも見える）
 alter table public.users add column if not exists avatar_emoji text        not null default '✦';
+-- フレンドコード（例: ZBR-8A2K7X）。フレンド申請はこのコードのみで行う。
+alter table public.users add column if not exists friend_code text;
 
 -- サインアップ時にトリガー/クライアントが最小項目で insert できるよう既定値
 alter table public.users alter column preferred_time_of_day set default '20:00';
@@ -45,9 +47,57 @@ alter table public.users alter column notification_enabled  set default true;
 alter table public.users alter column created_at            set default now();
 alter table public.users alter column updated_at            set default now();
 
--- ID 指定でフレンド申請するため name を一意に（大文字小文字は無視）
--- ※ 既存データに重複名があると失敗します。先にクレンジングしてください。
-create unique index if not exists users_name_lower_unique on public.users (lower(name));
+-- 表示名は重複OK（自分の名前をそのまま使いたい人向け）。旧: lower(name) の一意 index は撤廃。
+drop index if exists public.users_name_lower_unique;
+
+-- フレンドコードの正規化（ハイフン・大小文字を無視して比較 / 一意判定）
+create or replace function public.canon_friend_code(code text)
+returns text language sql immutable as $$
+  select upper(regexp_replace(coalesce(code, ''), '[^A-Za-z0-9]', '', 'g'))
+$$;
+
+-- ランダムなフレンドコード生成（紛らわしい 0/O/1/I/L を除く 30 字から6桁 + ZBR-）
+create or replace function public.gen_friend_code()
+returns text language plpgsql volatile set search_path = public as $$
+declare
+  alphabet constant text := '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+  candidate text;
+  i int;
+  attempt int := 0;
+begin
+  loop
+    candidate := 'ZBR-';
+    for i in 1..6 loop
+      candidate := candidate || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    end loop;
+    exit when not exists (
+      select 1 from public.users
+      where public.canon_friend_code(friend_code) = public.canon_friend_code(candidate)
+    );
+    attempt := attempt + 1;
+    if attempt > 20 then
+      candidate := candidate || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+      exit;
+    end if;
+  end loop;
+  return candidate;
+end;
+$$;
+
+create unique index if not exists users_friend_code_canon_key
+  on public.users (public.canon_friend_code(friend_code))
+  where friend_code is not null;
+
+-- 既存ユーザーに採番（1行ずつ）→ 以後は必須＋既定値で自動採番
+do $$
+declare r record;
+begin
+  for r in select id from public.users where friend_code is null loop
+    update public.users set friend_code = public.gen_friend_code() where id = r.id;
+  end loop;
+end $$;
+alter table public.users alter column friend_code set default public.gen_friend_code();
+alter table public.users alter column friend_code set not null;
 
 create or replace function public.tg_set_updated_at()
 returns trigger language plpgsql as $$
@@ -80,9 +130,7 @@ begin
   if v_name is null then
     v_name := 'user_' || substr(replace(new.id::text, '-', ''), 1, 8);
   end if;
-  if exists (select 1 from public.users u where lower(u.name) = lower(v_name)) then
-    v_name := v_name || '_' || substr(replace(new.id::text, '-', ''), 1, 4);
-  end if;
+  -- 表示名は重複OKなのでサフィックス付与はしない。friend_code は列 default が自動採番。
 
   insert into public.users (id, name, avatar_url, avatar_emoji, preferred_time_of_day, notification_enabled)
   values (
@@ -149,6 +197,10 @@ exception when duplicate_object then null; end $$;
 -- =====================================================================
 create index if not exists workout_logs_user_created
   on public.workout_logs (user_id, created_at desc);
+
+-- 実施時間（秒）。saveWorkoutSession() が result.completedSec を入れる。
+alter table public.workout_logs
+  add column if not exists duration_sec integer not null default 0;
 
 
 -- =====================================================================
@@ -277,8 +329,9 @@ create policy workout_logs_delete_self on public.workout_logs
 -- 6. RPC（クライアントは supabase.rpc('関数名', {...}) で呼ぶ）
 -- =====================================================================
 
--- 6-1. フレンド申請
-create or replace function public.send_friend_request(addressee_name text)
+-- 6-1. フレンド申請（フレンドコードで相手を検索）
+drop function if exists public.send_friend_request(text);
+create function public.send_friend_request(friend_code text)
 returns public.friendships
 language plpgsql
 security definer
@@ -289,10 +342,13 @@ declare
   v_target   uuid;
   v_existing public.friendships;
   v_row      public.friendships;
+  v_canon    text := public.canon_friend_code(friend_code);
 begin
   if v_me is null then raise exception 'AUTH_REQUIRED'; end if;
+  if v_canon = '' then raise exception 'USER_NOT_FOUND'; end if;
 
-  select id into v_target from public.users where lower(name) = lower(addressee_name);
+  select id into v_target from public.users u
+  where public.canon_friend_code(u.friend_code) = v_canon;
   if v_target is null then raise exception 'USER_NOT_FOUND'; end if;
   if v_target = v_me then raise exception 'CANNOT_ADD_SELF'; end if;
 
@@ -343,7 +399,7 @@ begin
 end;
 $$;
 
--- 6-3. フレンド一覧 + 継続 / お休み状況（継続日数の多い順）
+-- 6-3. フレンド一覧 + 継続 / お休み状況（継続日数の多い順。自分自身の行も含む）
 drop function if exists public.get_friends_with_status();
 create function public.get_friends_with_status()
 returns table (
@@ -356,7 +412,8 @@ returns table (
   streak_days      int,
   rest_days        int,
   best_streak_days int,
-  friends_since    timestamptz
+  friends_since    timestamptz,
+  is_self          boolean
 )
 language sql
 stable
@@ -370,16 +427,23 @@ as $$
     from public.friendships
     where status = 'accepted'
       and (user_id_a = auth.uid() or user_id_b = auth.uid())
+  ),
+  ids as (
+    select friend_id, friends_since, false as is_self from my_friends
+    union all
+    select auth.uid(), now(), true
+    where auth.uid() is not null
   )
   select
     u.id, u.name, u.avatar_url, u.avatar_emoji, u.is_online, u.last_seen,
     coalesce(s.streak_days, 0)::int,
     s.rest_days::int,
     coalesce(s.best_streak_days, 0)::int,
-    mf.friends_since
-  from my_friends mf
-  join public.users u on u.id = mf.friend_id
-  left join public.user_workout_stats s on s.user_id = mf.friend_id
+    i.friends_since,
+    i.is_self
+  from ids i
+  join public.users u on u.id = i.friend_id
+  left join public.user_workout_stats s on s.user_id = i.friend_id
   order by coalesce(s.streak_days, 0) desc, u.name asc;
 $$;
 
@@ -424,12 +488,64 @@ as $$
   delete from auth.users where id = auth.uid();
 $$;
 
+-- 6-7. ホーム画面の実績（連続記録 / 今週の合計）
+create or replace function public.get_home_stats()
+returns table (
+  streak_days   integer,
+  week_minutes  integer,
+  week_workouts integer
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with wk as (
+    select date_trunc('week', (now() at time zone 'Asia/Tokyo'))::date as start_day
+  ),
+  this_week as (
+    select w.duration_sec
+    from public.workout_logs w, wk
+    where w.user_id = auth.uid()
+      and (w.created_at at time zone 'Asia/Tokyo')::date >= wk.start_day
+  )
+  select
+    coalesce(
+      (select s.streak_days from public.user_workout_stats s where s.user_id = auth.uid()),
+      0
+    )::integer,
+    coalesce((select round(sum(duration_sec) / 60.0) from this_week), 0)::integer,
+    coalesce((select count(*) from this_week), 0)::integer;
+$$;
+
+-- 6-8. 自分のフレンドコードを取得（無ければ採番して保存）
+create or replace function public.get_my_friend_code()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text;
+begin
+  if auth.uid() is null then raise exception 'AUTH_REQUIRED'; end if;
+  select friend_code into v_code from public.users where id = auth.uid();
+  if v_code is null or v_code = '' then
+    v_code := public.gen_friend_code();
+    update public.users set friend_code = v_code where id = auth.uid();
+  end if;
+  return v_code;
+end;
+$$;
+
 revoke all on function public.send_friend_request(text)                from public, anon;
 revoke all on function public.respond_to_friend_request(uuid, boolean) from public, anon;
 revoke all on function public.get_friends_with_status()                from public, anon;
 revoke all on function public.get_incoming_friend_requests()           from public, anon;
 revoke all on function public.update_my_presence(boolean)              from public, anon;
 revoke all on function public.delete_current_user()                    from public, anon;
+revoke all on function public.get_home_stats()                         from public, anon;
+revoke all on function public.get_my_friend_code()                     from public, anon;
 
 grant execute on function public.send_friend_request(text)                to authenticated;
 grant execute on function public.respond_to_friend_request(uuid, boolean) to authenticated;
@@ -437,6 +553,8 @@ grant execute on function public.get_friends_with_status()                to aut
 grant execute on function public.get_incoming_friend_requests()           to authenticated;
 grant execute on function public.update_my_presence(boolean)              to authenticated;
 grant execute on function public.delete_current_user()                    to authenticated;
+grant execute on function public.get_home_stats()                         to authenticated;
+grant execute on function public.get_my_friend_code()                     to authenticated;
 
 
 -- =====================================================================
@@ -450,3 +568,224 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   alter publication supabase_realtime add table public.users;
 exception when duplicate_object then null; end $$;
+
+
+-- =====================================================================
+-- 8. 目標ロードマップ（goal_trees / goal_milestones / goal_tasks）
+--    仕様: docs/goal-roadmap-persistence-spec.md
+--    「この目標ではじめる」で確定したロードマップを保存し、端末をまたいで
+--    同じものが見えるようにする（save_roadmap / get_current_roadmap RPC）。
+-- =====================================================================
+create table if not exists public.goal_trees (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  title               text not null default '',
+  user_input_raw      text not null default '',
+  target_period_weeks int  not null default 12,
+  is_active           boolean not null default true,
+  created_at          timestamptz not null default now()
+);
+create index if not exists goal_trees_user_active
+  on public.goal_trees (user_id, is_active, created_at desc);
+
+create table if not exists public.goal_milestones (
+  id           uuid primary key default gen_random_uuid(),
+  goal_id      uuid not null references public.goal_trees(id) on delete cascade,
+  order_index  int  not null,
+  title        text not null default '',
+  period_weeks int  not null default 1,
+  description  text not null default ''
+);
+create index if not exists goal_milestones_goal on public.goal_milestones (goal_id, order_index);
+
+create table if not exists public.goal_tasks (
+  id                 uuid primary key default gen_random_uuid(),
+  milestone_id       uuid not null references public.goal_milestones(id) on delete cascade,
+  order_index        int  not null,
+  week_number        int  not null default 1,
+  title              text not null default '',
+  description        text not null default '',
+  frequency_per_week int  not null default 2,
+  workout_menu_tag   text
+);
+create index if not exists goal_tasks_milestone on public.goal_tasks (milestone_id, order_index);
+
+alter table public.goal_trees      enable row level security;
+alter table public.goal_milestones enable row level security;
+alter table public.goal_tasks      enable row level security;
+
+drop policy if exists goal_trees_all_self      on public.goal_trees;
+drop policy if exists goal_milestones_all_self on public.goal_milestones;
+drop policy if exists goal_tasks_all_self      on public.goal_tasks;
+
+create policy goal_trees_all_self on public.goal_trees
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+create policy goal_milestones_all_self on public.goal_milestones
+  for all using (exists (
+    select 1 from public.goal_trees g
+    where g.id = goal_milestones.goal_id and g.user_id = auth.uid()
+  ));
+
+create policy goal_tasks_all_self on public.goal_tasks
+  for all using (exists (
+    select 1 from public.goal_milestones m
+    join public.goal_trees g on g.id = m.goal_id
+    where m.id = goal_tasks.milestone_id and g.user_id = auth.uid()
+  ));
+
+-- 保存: 呼び出しユーザーの既存ロードマップを非アクティブ化し、新しいツリーを1本 insert
+create or replace function public.save_roadmap(p_roadmap jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_goal  uuid;
+  v_ms    jsonb;
+  v_task  jsonb;
+  v_msid  uuid;
+begin
+  if v_uid is null then
+    raise exception 'AUTH_REQUIRED';
+  end if;
+
+  update public.goal_trees set is_active = false where user_id = v_uid and is_active;
+
+  insert into public.goal_trees (user_id, title, user_input_raw, target_period_weeks)
+  values (
+    v_uid,
+    coalesce(p_roadmap->>'title', ''),
+    coalesce(p_roadmap->>'user_input_raw', ''),
+    coalesce((p_roadmap->>'target_period_weeks')::int, 12)
+  )
+  returning id into v_goal;
+
+  for v_ms in select * from jsonb_array_elements(coalesce(p_roadmap->'milestones', '[]'::jsonb))
+  loop
+    insert into public.goal_milestones (goal_id, order_index, title, period_weeks, description)
+    values (
+      v_goal,
+      coalesce((v_ms->>'order')::int, 1),
+      coalesce(v_ms->>'title', ''),
+      coalesce((v_ms->>'period_weeks')::int, 1),
+      coalesce(v_ms->>'description', '')
+    )
+    returning id into v_msid;
+
+    for v_task in select * from jsonb_array_elements(coalesce(v_ms->'tasks', '[]'::jsonb))
+    loop
+      insert into public.goal_tasks
+        (milestone_id, order_index, week_number, title, description, frequency_per_week, workout_menu_tag)
+      values (
+        v_msid,
+        coalesce((v_task->>'order')::int, 1),
+        coalesce((v_task->>'week_number')::int, 1),
+        coalesce(v_task->>'title', ''),
+        coalesce(v_task->>'description', ''),
+        coalesce((v_task->>'frequency_per_week')::int, 2),
+        nullif(v_task->>'workout_menu_tag', '')
+      );
+    end loop;
+  end loop;
+
+  return v_goal;
+end;
+$$;
+
+-- 取得: 呼び出しユーザーの is_active な最新ツリーを Roadmap 型そのままの JSON で返す
+create or replace function public.get_current_roadmap()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case when g.id is null then null else jsonb_build_object(
+    'goal_id', g.id,
+    'title', g.title,
+    'user_input_raw', g.user_input_raw,
+    'target_period_weeks', g.target_period_weeks,
+    'milestones', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'milestone_id', m.id,
+        'order', m.order_index,
+        'title', m.title,
+        'period_weeks', m.period_weeks,
+        'description', m.description,
+        'tasks', coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'task_id', t.id,
+            'order', t.order_index,
+            'week_number', t.week_number,
+            'title', t.title,
+            'description', t.description,
+            'frequency_per_week', t.frequency_per_week,
+            'workout_menu_tag', t.workout_menu_tag
+          ) order by t.order_index)
+          from public.goal_tasks t where t.milestone_id = m.id
+        ), '[]'::jsonb)
+      ) order by m.order_index)
+      from public.goal_milestones m where m.goal_id = g.id
+    ), '[]'::jsonb)
+  ) end
+  from (
+    select * from public.goal_trees
+    where user_id = auth.uid() and is_active
+    order by created_at desc limit 1
+  ) g;
+$$;
+
+-- ホーム画面用「今週の目標」。「今週」= created_at からの経過週（JST暦日）。
+create or replace function public.get_this_week_focus()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with active as (
+    select * from public.goal_trees
+    where user_id = auth.uid() and is_active
+    order by created_at desc
+    limit 1
+  ),
+  week_calc as (
+    select
+      a.*,
+      greatest(1, (
+        ((now() at time zone 'Asia/Tokyo')::date - (a.created_at at time zone 'Asia/Tokyo')::date) / 7
+      ) + 1) as current_week
+    from active a
+  ),
+  chosen as (
+    select t.title, t.description, t.frequency_per_week, m.title as milestone_title
+    from week_calc w
+    join public.goal_milestones m on m.goal_id = w.id
+    join public.goal_tasks t on t.milestone_id = m.id
+    where t.week_number <= w.current_week
+    order by t.week_number desc
+    limit 1
+  )
+  select case when w.id is null then null else jsonb_build_object(
+    'roadmap_title', w.title,
+    'current_week', w.current_week,
+    'target_period_weeks', w.target_period_weeks,
+    'is_complete', w.current_week > w.target_period_weeks,
+    'milestone_title', c.milestone_title,
+    'task_title', c.title,
+    'task_description', c.description,
+    'frequency_per_week', c.frequency_per_week
+  ) end
+  from week_calc w
+  left join chosen c on true;
+$$;
+
+revoke all on function public.save_roadmap(jsonb)      from public, anon;
+revoke all on function public.get_current_roadmap()    from public, anon;
+revoke all on function public.get_this_week_focus()    from public, anon;
+grant execute on function public.save_roadmap(jsonb)      to authenticated;
+grant execute on function public.get_current_roadmap()    to authenticated;
+grant execute on function public.get_this_week_focus()    to authenticated;

@@ -14,12 +14,14 @@ export type Friend = {
   avatar_emoji: string;
   /** 連続達成日数 */
   streak_days: number;
-  /** 直近で運動した日からの経過日数（0 = 今日やった） */
-  rest_days: number;
+  /** 直近で運動した日からの経過日数（0 = 今日やった / null = まだ記録なし） */
+  rest_days: number | null;
   /** 最終アクティブ日時（ISO文字列）。Presenceで上書きされる */
   last_active_at: string;
   /** 自己ベストの連続日数（プログレスバーの目盛りに使用） */
   best_streak_days: number;
+  /** true なら自分自身の行（ランキングに自分も表示するため） */
+  is_self: boolean;
 };
 
 /** 届いているフレンド申請 */

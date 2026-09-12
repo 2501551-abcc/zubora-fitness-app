@@ -14,6 +14,8 @@ export type AppUser = {
   avatar_url: string | null;
   /** 画像未設定時のフォールバック絵文字（フレンドからも見える） */
   avatar_emoji: string;
+  /** フレンド申請に使う固有コード（例: ZBR-8A2K7X） */
+  friend_code: string | null;
   preferred_time_of_day: TimeString;
   notification_enabled: boolean;
   is_online: boolean;
@@ -45,6 +47,8 @@ export type FriendWithStatus = {
   rest_days: number | null;
   best_streak_days: number;
   friends_since: string;
+  /** true なら呼び出し本人の行（フレンドではなく自分自身） */
+  is_self: boolean;
 };
 
 /** RPC: get_incoming_friend_requests() の1行 */
