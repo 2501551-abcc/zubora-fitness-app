@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 import { View } from 'react-native';
 import 'react-native-reanimated';
@@ -20,6 +21,27 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
+
+  // 通知をタップしてアプリを開いたら、通知に紐づく画面へ遷移する。
+  // ・アプリがバックグラウンド/フォアグラウンドのとき → addNotificationResponseReceivedListener
+  // ・アプリが完全に終了していて通知タップで起動した（コールドスタート）とき
+  //   → 上のリスナーは間に合わないので getLastNotificationResponseAsync() で拾う
+  useEffect(() => {
+    const goToNotificationScreen = (response: Notifications.NotificationResponse) => {
+      const screen = response.notification.request.content.data?.screen;
+      if (typeof screen === 'string') {
+        router.push(screen as Href);
+      }
+    };
+
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) goToNotificationScreen(response);
+    });
+
+    const sub = Notifications.addNotificationResponseReceivedListener(goToNotificationScreen);
+    return () => sub.remove();
+  }, [router]);
 
   // 起動時にホーム画面ウィジェットへ最新の連続日数を渡す（iOS のみ／他は no-op）。
   useEffect(() => {
