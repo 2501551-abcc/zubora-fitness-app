@@ -24,6 +24,7 @@ import { GOAL_QUESTIONS, type OptionValue } from '@/constants/goal-questions';
 import { MonoColors, MonoGlyph, MonoLayout } from '@/constants/mono-theme';
 import { goalDraft } from '@/lib/goal-draft';
 import { tapImpact } from '@/lib/haptics';
+import { softWrapJa } from '@/lib/ja-text';
 import { fetchCurrentRoadmap, fetchThisWeekFocus, saveRoadmap } from '@/services/goalService';
 import { fetchHomeStats } from '@/services/workoutService';
 import type { Roadmap, RoadmapTask, WeekFocus } from '@/types/goal';
@@ -63,7 +64,7 @@ function withTitleBreaks(title: string): string {
   return title
     .replace(TITLE_BREAK_PATTERN, '$1\n')
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => softWrapJa(line.trim()))
     .filter((line) => line.length > 0)
     .join('\n');
 }
@@ -236,7 +237,7 @@ export default function GoalRoadmapScreen() {
                     </View>
                     <Text style={styles.weeks}>{m.period_weeks}週</Text>
                   </View>
-                  {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
+                  {m.description ? <Text style={styles.desc}>{softWrapJa(m.description)}</Text> : null}
 
                   {m.tasks.map((t, ti) => {
                     const tStatus = taskStatus(t);
