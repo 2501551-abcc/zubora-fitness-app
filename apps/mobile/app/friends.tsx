@@ -44,6 +44,12 @@ import { useAuthSession } from '@/hooks/use-auth-session';
 import { notifySuccess, tapImpact, tapLight } from '@/lib/haptics';
 import { fetchMyFriendCode } from '@/services/authService';
 import {
+  addFriendComment,
+  getFriendComments,
+  getFriendCommentSummary,
+} from '@/services/friendCommentService';
+import { getMyNudgesSentToday, sendFriendNudge } from '@/services/friendNudgeService';
+import {
   acceptFriendRequest,
   fetchFriendRequests,
   fetchFriends,
@@ -53,6 +59,7 @@ import {
   subscribeToFriendRequests,
   subscribeToPresence,
 } from '@/services/friendsService';
+import type { FriendCommentRow, FriendCommentSummaryRow } from '@/types/db';
 import type { Friend, FriendRequest, OnlineMap } from '@/types/friends';
 
 /** オンライン枠の発光カラー（ピンク／ゴールド） */
@@ -60,6 +67,9 @@ const GLOW_PINK = '#E4A7B7';
 const GLOW_GOLD = '#D8B45C';
 /** この日数ごとに星をひとつ灯す */
 const STAR_PER_DAYS = 7;
+/** フレンドへ送れるリアクションの絵文字（1日1回まで）。連続中は称賛系、お休み中は応援系 */
+const REACTION_EMOJIS_CHEER = ['🔥', '👏', '✨', '💪'];
+const REACTION_EMOJIS_SUPPORT = ['😭', '📣', '💪', '👋'];
 
 export default function FriendsScreen() {
   const router = useRouter();
@@ -117,14 +127,41 @@ function FriendsDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  /** 今日すでに応援ナッジを送った相手（userId→送った絵文字） */
+  const [nudgedToday, setNudgedToday] = useState<Record<string, string>>({});
+  /** フレンドカードへの「ひと言コメント」件数＋最新1件（userId→summary） */
+  const [commentSummary, setCommentSummary] = useState<Record<string, FriendCommentSummaryRow>>({});
+  /** コメント一覧モーダルを開いている相手。null なら閉じている */
+  const [commentTarget, setCommentTarget] = useState<Friend | null>(null);
 
   const load = useCallback(async () => {
+    // フレンド一覧・申請は既存の最重要データ。ここが失敗したら他は試さない
+    let f: Friend[];
     try {
-      const [f, r] = await Promise.all([fetchFriends(), fetchFriendRequests()]);
-      setFriends(f);
+      const [fetched, r] = await Promise.all([fetchFriends(), fetchFriendRequests()]);
+      f = fetched;
+      setFriends(fetched);
       setRequests(r);
     } catch (e) {
       console.warn('[friends] 一覧の取得に失敗しました', e);
+      return;
+    }
+
+    // ここから下は新機能（未マイグレーションのDBだとRPCが無くて失敗しうる）。
+    // 失敗してもフレンド一覧自体は表示されたままにしたいので個別にtry/catchする
+    try {
+      const n = await getMyNudgesSentToday();
+      setNudgedToday(Object.fromEntries(n.map((row) => [row.to_user_id, row.emoji])));
+    } catch (e) {
+      console.warn('[friends] 応援ナッジの取得に失敗しました（migration_12未実行の可能性）', e);
+    }
+
+    try {
+      const friendIds = f.filter((x) => !x.is_self).map((x) => x.user_id);
+      const summaries = await getFriendCommentSummary(friendIds);
+      setCommentSummary(Object.fromEntries(summaries.map((s) => [s.to_user_id, s])));
+    } catch (e) {
+      console.warn('[friends] コメントの取得に失敗しました（migration_14未実行の可能性）', e);
     }
   }, []);
 
@@ -176,6 +213,36 @@ function FriendsDashboard() {
       await rejectFriendRequest(req.request_id);
     } catch (e) {
       console.warn('[friends] 拒否に失敗しました', e);
+    }
+  };
+
+  const handleNudge = async (friend: Friend, emoji: string) => {
+    if (nudgedToday[friend.user_id]) return;
+    tapImpact();
+    setNudgedToday((prev) => ({ ...prev, [friend.user_id]: emoji }));
+    try {
+      const res = await sendFriendNudge(friend.user_id, emoji);
+      if (res.ok) {
+        notifySuccess();
+      } else {
+        setNudgedToday((prev) => {
+          const next = { ...prev };
+          delete next[friend.user_id];
+          return next;
+        });
+        if (res.reason === 'already_nudged_today') {
+          setNudgedToday((prev) => ({ ...prev, [friend.user_id]: emoji }));
+        } else {
+          Alert.alert('送れませんでした', 'もう一度お試しください');
+        }
+      }
+    } catch (e) {
+      console.warn('[friends] ナッジの送信に失敗しました', e);
+      setNudgedToday((prev) => {
+        const next = { ...prev };
+        delete next[friend.user_id];
+        return next;
+      });
     }
   };
 
@@ -284,6 +351,10 @@ function FriendsDashboard() {
                 rank={i + 1}
                 online={online[friend.user_id]}
                 onRemove={() => handleRemove(friend)}
+                nudgedEmoji={nudgedToday[friend.user_id]}
+                onNudge={(emoji) => handleNudge(friend, emoji)}
+                commentSummary={commentSummary[friend.user_id]}
+                onOpenComments={() => setCommentTarget(friend)}
               />
             ))}
           </View>
@@ -295,6 +366,11 @@ function FriendsDashboard() {
       </ScrollView>
 
       <AddFriendModal visible={addOpen} onClose={() => setAddOpen(false)} />
+      <CommentModal
+        friend={commentTarget}
+        onClose={() => setCommentTarget(null)}
+        onPosted={load}
+      />
     </SafeAreaView>
   );
 }
@@ -308,11 +384,19 @@ function FriendCard({
   rank,
   online,
   onRemove,
+  nudgedEmoji,
+  onNudge,
+  commentSummary,
+  onOpenComments,
 }: {
   friend: Friend;
   rank: number;
   online?: { last_active_at: string };
   onRemove: () => void;
+  nudgedEmoji?: string;
+  onNudge: (emoji: string) => void;
+  commentSummary?: FriendCommentSummaryRow;
+  onOpenComments: () => void;
 }) {
   const isOnline = !!online;
   const lastActive = online?.last_active_at ?? friend.last_active_at;
@@ -320,6 +404,8 @@ function FriendCard({
   const goal = Math.max(friend.best_streak_days, STAR_PER_DAYS);
   const progress = Math.min(1, friend.streak_days / goal);
   const status = friendStatus(friend, friend.is_self);
+  const canNudge = !friend.is_self;
+  const nudgeEmojis = status.vibe === 'streak' ? REACTION_EMOJIS_CHEER : REACTION_EMOJIS_SUPPORT;
 
   return (
     <Pressable
@@ -380,8 +466,67 @@ function FriendCard({
           style={[styles.barCaption, status.vibe === 'nudge' && styles.nudgeCaption]}>
           {status.caption}
         </Text>
+
+        {canNudge && (
+          <NudgeRow emojis={nudgeEmojis} sentEmoji={nudgedEmoji} onPick={onNudge} />
+        )}
+
+        {!friend.is_self && (
+          <Pressable style={styles.commentPreview} onPress={onOpenComments} hitSlop={4}>
+            <Feather name="message-circle" size={12} color={MonoColors.textMuted} />
+            {commentSummary && commentSummary.comment_count > 0 ? (
+              <Text style={styles.commentPreviewText} numberOfLines={1}>
+                <Text style={styles.commentPreviewName}>{commentSummary.latest_from_name}</Text>
+                {'：' + commentSummary.latest_body}
+                {commentSummary.comment_count > 1 && (
+                  <Text style={styles.commentPreviewCount}>
+                    {'　他' + (commentSummary.comment_count - 1) + '件'}
+                  </Text>
+                )}
+              </Text>
+            ) : (
+              <Text style={styles.commentPreviewText}>ひと言コメントする</Text>
+            )}
+          </Pressable>
+        )}
       </View>
     </Pressable>
+  );
+}
+
+/* ============================================================
+ * 応援ナッジ（運動記録が無いフレンドにも絵文字でリアクション）
+ * ========================================================== */
+
+function NudgeRow({
+  emojis,
+  sentEmoji,
+  onPick,
+}: {
+  emojis: string[];
+  sentEmoji?: string;
+  onPick: (emoji: string) => void;
+}) {
+  if (sentEmoji) {
+    return (
+      <View style={styles.nudgeSentPill}>
+        <Text style={styles.nudgeSentText}>{sentEmoji} 今日はもうリアクション済み</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.nudgeRow}>
+      {emojis.map((emoji) => (
+        <Pressable
+          key={emoji}
+          style={styles.nudgeBtn}
+          hitSlop={4}
+          onPress={() => onPick(emoji)}>
+          <Text style={styles.nudgeBtnText}>{emoji}</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -718,6 +863,142 @@ function AddFriendModal({
 }
 
 /* ============================================================
+ * ひと言コメント モーダル（継続ランキングのフレンドカード用）
+ * ========================================================== */
+
+function CommentModal({
+  friend,
+  onClose,
+  onPosted,
+}: {
+  friend: Friend | null;
+  onClose: () => void;
+  onPosted: () => void;
+}) {
+  const [comments, setComments] = useState<FriendCommentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const targetId = friend?.user_id ?? null;
+
+  useEffect(() => {
+    if (!targetId) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const rows = await getFriendComments(targetId);
+        if (alive) setComments(rows);
+      } catch (e) {
+        console.warn('[friends] コメント取得に失敗しました', e);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [targetId]);
+
+  const close = () => {
+    setBody('');
+    setComments([]);
+    onClose();
+  };
+
+  const submit = async () => {
+    if (!targetId || !body.trim() || sending) return;
+    tapImpact();
+    setSending(true);
+    const res = await addFriendComment(targetId, body);
+    setSending(false);
+    if (res.ok) {
+      setBody('');
+      notifySuccess();
+      try {
+        setComments(await getFriendComments(targetId));
+      } catch (e) {
+        console.warn('[friends] コメント再取得に失敗しました', e);
+      }
+      onPosted();
+    } else {
+      Alert.alert('送れませんでした', 'もう一度お試しください');
+    }
+  };
+
+  return (
+    <Modal visible={!!friend} transparent animationType="fade" onRequestClose={close}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : undefined}>
+        <Pressable style={styles.backdrop} onPress={close}>
+          <Pressable
+            style={[styles.sheet, styles.commentSheet]}
+            onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>{friend?.username}さんへのコメント</Text>
+            <Text style={styles.sheetSub}>フレンドだけに見える、ひと言の応援メモです</Text>
+
+            <ScrollView style={styles.commentList} contentContainerStyle={{ gap: 12 }}>
+              {loading ? (
+                <ActivityIndicator color={MonoColors.ink} />
+              ) : comments.length === 0 ? (
+                <Text style={styles.commentEmpty}>まだコメントがありません</Text>
+              ) : (
+                comments.map((c) => (
+                  <View key={c.comment_id} style={styles.commentRow}>
+                    <Avatar
+                      uri={c.from_avatar_url}
+                      emoji={c.from_avatar_emoji ?? '✦'}
+                      online={false}
+                      size={30}
+                    />
+                    <View style={styles.flex}>
+                      <Text style={styles.commentRowName}>{c.from_name ?? 'ゲスト'}</Text>
+                      <Text style={styles.commentRowBody}>{c.body}</Text>
+                      <Text style={styles.commentRowTime}>{formatRelative(c.created_at)}</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="今日のひと言を送る"
+                placeholderTextColor={MonoColors.textMuted}
+                value={body}
+                onChangeText={setBody}
+                maxLength={200}
+                onSubmitEditing={submit}
+                returnKeyType="send"
+              />
+              <Pressable
+                style={[styles.commentSendBtn, (sending || !body.trim()) && styles.sendBtnDisabled]}
+                onPress={submit}
+                disabled={sending || !body.trim()}>
+                {sending ? (
+                  <ActivityIndicator color={MonoColors.onInk} size="small" />
+                ) : (
+                  <Feather name="send" size={15} color={MonoColors.onInk} />
+                )}
+              </Pressable>
+            </View>
+
+            <Pressable onPress={close} hitSlop={8} style={styles.cancelLink}>
+              <Text style={styles.cancelLinkText}>閉じる</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+/* ============================================================
  * ヘルパー
  * ========================================================== */
 
@@ -960,6 +1241,83 @@ const styles = StyleSheet.create({
   barFillTop: { backgroundColor: GLOW_GOLD },
   barCaption: { fontSize: 10, color: MonoColors.textMuted, marginTop: 4 },
   nudgeCaption: { color: MonoColors.accent, fontWeight: '700' },
+
+  /* 応援ナッジ */
+  nudgeRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  nudgeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: MonoColors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: MonoColors.border,
+  },
+  nudgeBtnText: { fontSize: 14 },
+  nudgeSentPill: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: MonoLayout.radiusPill,
+    backgroundColor: MonoColors.accentTint,
+  },
+  nudgeSentText: { fontSize: 11, fontWeight: '700', color: MonoColors.accent },
+
+  /* ひと言コメント */
+  commentPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+  },
+  commentPreviewText: {
+    flex: 1,
+    fontSize: 11,
+    color: MonoColors.textSecondary,
+  },
+  commentPreviewName: { fontWeight: '700', color: MonoColors.inkSoft },
+  commentPreviewCount: { color: MonoColors.textMuted },
+
+  commentSheet: { maxHeight: '80%' },
+  commentList: { alignSelf: 'stretch', maxHeight: 280, marginTop: 4 },
+  commentEmpty: {
+    fontSize: 12,
+    color: MonoColors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 24,
+  },
+  commentRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  commentRowName: { fontSize: 12, fontWeight: '700', color: MonoColors.ink },
+  commentRowBody: { fontSize: 13, color: MonoColors.inkSoft, marginTop: 2, lineHeight: 18 },
+  commentRowTime: { fontSize: 10, color: MonoColors.textMuted, marginTop: 2 },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+    marginTop: 14,
+  },
+  commentInput: {
+    flex: 1,
+    fontSize: 13,
+    color: MonoColors.ink,
+    backgroundColor: MonoColors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: MonoColors.border,
+    borderRadius: MonoLayout.radiusControl,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  commentSendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: MonoColors.ink,
+  },
 
   /* アバター */
   glowRing: {
