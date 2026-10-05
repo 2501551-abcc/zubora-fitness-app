@@ -444,14 +444,14 @@ function friendStatus(
     caption = 'この調子で継続してこ';
   } else if (rest <= 3) {
     head = `サボり${rest}日目`;
-    caption = rest === 1 ? 'まだ取り戻せる！' : 'そろそろ戻ろっか 🌱';
+    caption = rest === 1 ? 'まだ取り戻せる！' : '筋トレ再開しない？ 🌱';
   } else if (rest <= 6) {
     head = `サボり${rest}日目`;
     caption = isSelf ? '今日動いてみる？ 📣' : '誘ってみよう！ 📣';
     vibe = 'nudge';
   } else if (rest <= 13) {
     head = '1週間お休み中 🍵';
-    caption = isSelf ? 'ひさしぶりに動いてみない？' : 'ひさしぶりに声かけてみる？';
+    caption = isSelf ? '久しぶりに動いてみない？' : '久しぶりに声かけてみる？';
     vibe = 'nudge';
   } else if (rest <= 29) {
     head = `${rest}日ぶり…`;

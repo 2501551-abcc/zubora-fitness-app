@@ -97,9 +97,11 @@ export async function syncDailyReminder(): Promise<void> {
     await Notifications.scheduleNotificationAsync({
       identifier: DAILY_REMINDER_ID,
       content: {
-        title: '今日もゆるっといこう 💪',
-        body: '筋トレの時間だよ。1分でもえらい！',
+        title: '今日も頑張ろう 💪',
+        body: '筋トレの時間だよ！筋トレしようよ！',
         sound: true,
+        // タップしたときにこの画面へ遷移させる（_layout.tsx の通知タップ処理が見る）
+        data: { screen: '/workout/prepare' },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
