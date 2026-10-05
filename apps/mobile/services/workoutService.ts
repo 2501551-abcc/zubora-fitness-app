@@ -13,6 +13,7 @@
 import { DEFAULT_REMINDER_HOUR, pushWidgetSnapshot } from '@/lib/widget-bridge';
 import type { DurationOption, HomeStats, WorkoutResult } from '@/types/workout';
 import { supabase } from '../supabase';
+import { buildDailyMinutes, rangeStartIso, type DailyMinutes } from '@/lib/daily-minutes';
 
 /** ドラムロールに表示する時間の候補（分）。ずぼら向けに短い刻みも用意。 */
 const DURATION_MINUTES = [1, 3, 5, 10, 15, 20, 25, 30, 40, 45, 60] as const;
@@ -120,4 +121,35 @@ export async function fetchHomeStats(): Promise<HomeStats> {
 export async function fetchStreakDays(): Promise<number> {
   const { streakDays } = await fetchHomeStats();
   return streakDays;
+}
+
+/**
+ * 直近 days 日の「1日ごとの筋トレ時間（分）」を返す（グラフ用）。日本時間の暦日で集計。
+ * 未ログイン時やエラー時は、全部 0 の配列を返す。
+ */
+export async function fetchDailyMinutes(days = 7): Promise<DailyMinutes[]> {
+  const now = new Date();
+  const empty = buildDailyMinutes([], now, days);
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return empty;
+
+    // workout_logs にはフレンドの行を読めるポリシーがあるため、必ず自分の user_id で絞る
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select('created_at, duration_sec')
+      .eq('user_id', user.id)
+      .gte('created_at', rangeStartIso(now, days));
+    if (error || !data) return empty;
+
+    return buildDailyMinutes(
+      data as { created_at: string; duration_sec: number }[],
+      now,
+      days,
+    );
+  } catch {
+    return empty;
+  }
 }

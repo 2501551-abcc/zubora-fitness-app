@@ -132,21 +132,30 @@ export default function HomeScreen() {
         <View style={styles.middleGroup}>
           <View style={styles.stats}>
             <View style={styles.statCard}>
-              <Text style={styles.statTop}>
-                {MonoGlyph.star} 連続記録
-              </Text>
+              <View style={styles.statTopRow}>
+                <Text style={styles.statTop}>
+                  {MonoGlyph.star} 連続記録
+                </Text>
+              </View>
               <Text style={styles.statValue}>
                 {stats.streakDays}
                 <Text style={styles.statUnit}> 日</Text>
               </Text>
             </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statTop}>{MonoGlyph.star} 今週の合計</Text>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => router.push('/stats')}
+              accessibilityRole="button"
+              accessibilityLabel="筋トレ時間のグラフを見る">
+              <View style={styles.statTopRow}>
+                <Text style={styles.statTop}>{MonoGlyph.star} 今週の合計</Text>
+                <Feather name="bar-chart-2" size={14} color={MonoColors.textMuted} />
+              </View>
               <Text style={styles.statValue}>
                 {stats.weekMinutes}
                 <Text style={styles.statUnit}> 分</Text>
               </Text>
-            </View>
+            </Pressable>
           </View>
 
           {/* 今週の目標（保存済みロードマップがあるときだけ表示） */}
@@ -287,11 +296,16 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     paddingHorizontal: 18,
   },
+  statTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   statTop: {
     fontSize: 13,
     fontWeight: '600',
     color: MonoColors.textSecondary,
-    marginBottom: 10,
   },
   statValue: { fontSize: 34, fontWeight: '800', color: MonoColors.ink },
   statUnit: { fontSize: 15, fontWeight: '400', color: MonoColors.textSecondary },
