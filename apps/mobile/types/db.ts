@@ -61,3 +61,109 @@ export type IncomingRequestRow = {
   from_avatar_url: string | null;
   created_at: string;
 };
+
+/** public.friend_posts（既存テーブル。今日の筋トレ投稿） */
+export type FriendPost = {
+  id: string;
+  user_id: string;
+  menu: string;
+  reps: number | null;
+  sets: number | null;
+  workout_seconds: number | null;
+  comment: string | null;
+  photo_url: string | null;
+  posted_at: string;
+};
+
+/** public.reactions（既存テーブル。type は絵文字文字列） */
+export type Reaction = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  type: string;
+  created_at: string;
+};
+
+/** public.comments（friend_posts向けコメント） */
+export type PostComment = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+};
+
+/** RPC: get_post_social(post_ids) の1行。1 post_id につき type の種類数ぶん返る */
+export type PostSocialRow = {
+  post_id: string;
+  /** 投稿に反応が無ければ null */
+  reaction_type: string | null;
+  reaction_count: number;
+  my_reacted: boolean;
+  comment_count: number;
+};
+
+/** RPC: get_post_comments(post_id) の1行（投稿者情報付き） */
+export type PostCommentRow = {
+  comment_id: string;
+  user_id: string;
+  name: string | null;
+  avatar_url: string | null;
+  avatar_emoji: string | null;
+  body: string;
+  created_at: string;
+};
+
+/** public.friend_nudges（運動記録が無いフレンドへの応援） */
+export type FriendNudge = {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  emoji: string;
+  created_at: string;
+};
+
+/** RPC: get_my_nudges_sent_today() の1行 */
+export type NudgeSentTodayRow = {
+  to_user_id: string;
+  emoji: string;
+};
+
+/** send_friend_nudge() の失敗理由 */
+export type SendNudgeResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_friends' | 'self' | 'already_nudged_today' | 'unknown' };
+
+/** public.friend_comments（継続ランキングのフレンドカードへの「ひと言コメント」） */
+export type FriendComment = {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  body: string;
+  created_at: string;
+};
+
+/** RPC: get_friend_comments(to_user_id) の1行（投稿者情報付き・新しい順） */
+export type FriendCommentRow = {
+  comment_id: string;
+  from_user_id: string;
+  from_name: string | null;
+  from_avatar_url: string | null;
+  from_avatar_emoji: string | null;
+  body: string;
+  created_at: string;
+};
+
+/** RPC: get_friend_comment_summary(to_user_ids) の1行（一覧画面用） */
+export type FriendCommentSummaryRow = {
+  to_user_id: string;
+  comment_count: number;
+  latest_body: string | null;
+  latest_from_name: string | null;
+  latest_created_at: string | null;
+};
+
+/** add_friend_comment() の失敗理由 */
+export type AddFriendCommentResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_friends' | 'self' | 'empty' | 'too_long' | 'unknown' };
