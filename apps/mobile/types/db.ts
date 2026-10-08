@@ -176,4 +176,4 @@ export type FriendCommentSummaryRow = {
 /** add_friend_comment() の失敗理由 */
 export type AddFriendCommentResult =
   | { ok: true }
-  | { ok: false; reason: 'not_friends' | 'self' | 'empty' | 'too_long' | 'unknown' };
+  | { ok: false; reason: 'not_friends' | 'empty' | 'too_long' | 'unknown' };

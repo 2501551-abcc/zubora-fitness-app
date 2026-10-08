@@ -42,7 +42,7 @@ export async function getFriendComments(toUserId: string): Promise<FriendComment
   return (data ?? []) as FriendCommentRow[];
 }
 
-/** コメントを追加（フレンド限定・自分宛ては不可）。送れたらPush通知も送る */
+/** コメントを追加（フレンド限定・自分のカードへの自分からのコメントもOK）。送れたらPush通知も送る */
 export async function addFriendComment(
   toUserId: string,
   body: string,
@@ -59,7 +59,6 @@ export async function addFriendComment(
   if (error) {
     const msg = error.message ?? '';
     if (msg.includes('NOT_FRIENDS')) return { ok: false, reason: 'not_friends' };
-    if (msg.includes('CANNOT_COMMENT_SELF')) return { ok: false, reason: 'self' };
     if (msg.includes('BODY_TOO_LONG')) return { ok: false, reason: 'too_long' };
     if (msg.includes('BODY_REQUIRED')) return { ok: false, reason: 'empty' };
     return { ok: false, reason: 'unknown' };
@@ -78,7 +77,7 @@ async function notifyCardOwner(toUserId: string, body: string): Promise<void> {
   try {
     const { data: auth } = await supabase.auth.getUser();
     const myUserId = auth.user?.id;
-    if (!myUserId) return;
+    if (!myUserId || toUserId === myUserId) return;
 
     const [{ data: myProfile }, { data: ownerProfile }] = await Promise.all([
       supabase.from('users').select('name').eq('id', myUserId).single(),

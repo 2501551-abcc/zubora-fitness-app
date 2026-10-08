@@ -500,9 +500,7 @@ function FriendCard({
               )}
             </Text>
           ) : (
-            <Text style={styles.commentPreviewText}>
-              {friend.is_self ? 'まだコメントはありません' : 'ひと言コメントする'}
-            </Text>
+            <Text style={styles.commentPreviewText}>ひと言コメントする</Text>
           )}
         </Pressable>
       </View>
@@ -985,11 +983,6 @@ function CommentModal({
             <Text style={styles.sheetTitle}>
               {friend?.is_self ? 'あなたへのコメント' : `${friend?.username}さんへのコメント`}
             </Text>
-            <Text style={styles.sheetSub}>
-              {friend?.is_self
-                ? 'フレンドからもらった、ひと言の応援メモです（24時間で自動的に消えます）'
-                : 'フレンドだけに見える、ひと言の応援メモです（24時間で自動的に消えます）'}
-            </Text>
 
             {friend?.is_self && (
               <>
@@ -1034,7 +1027,7 @@ function CommentModal({
                       <Text style={styles.commentRowBody}>{c.body}</Text>
                       <Text style={styles.commentRowTime}>{formatRelative(c.created_at)}</Text>
                     </View>
-                    {(c.from_user_id === myUserId || friend?.is_self) && (
+                    {c.from_user_id === myUserId && (
                       <Pressable
                         hitSlop={8}
                         onPress={() => handleDelete(c.comment_id)}
@@ -1047,30 +1040,28 @@ function CommentModal({
               )}
             </ScrollView>
 
-            {!friend?.is_self && (
-              <View style={styles.commentInputRow}>
-                <TextInput
-                  style={styles.commentInput}
-                  placeholder="今日のひと言を送る"
-                  placeholderTextColor={MonoColors.textMuted}
-                  value={body}
-                  onChangeText={setBody}
-                  maxLength={200}
-                  onSubmitEditing={submit}
-                  returnKeyType="send"
-                />
-                <Pressable
-                  style={[styles.commentSendBtn, (sending || !body.trim()) && styles.sendBtnDisabled]}
-                  onPress={submit}
-                  disabled={sending || !body.trim()}>
-                  {sending ? (
-                    <ActivityIndicator color={MonoColors.onInk} size="small" />
-                  ) : (
-                    <Feather name="send" size={15} color={MonoColors.onInk} />
-                  )}
-                </Pressable>
-              </View>
-            )}
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder={friend?.is_self ? '自分へのひと言を書く' : '今日のひと言を送る'}
+                placeholderTextColor={MonoColors.textMuted}
+                value={body}
+                onChangeText={setBody}
+                maxLength={200}
+                onSubmitEditing={submit}
+                returnKeyType="send"
+              />
+              <Pressable
+                style={[styles.commentSendBtn, (sending || !body.trim()) && styles.sendBtnDisabled]}
+                onPress={submit}
+                disabled={sending || !body.trim()}>
+                {sending ? (
+                  <ActivityIndicator color={MonoColors.onInk} size="small" />
+                ) : (
+                  <Feather name="send" size={15} color={MonoColors.onInk} />
+                )}
+              </Pressable>
+            </View>
 
             <Pressable onPress={close} hitSlop={8} style={styles.cancelLink}>
               <Text style={styles.cancelLinkText}>閉じる</Text>

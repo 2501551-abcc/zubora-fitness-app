@@ -320,9 +320,13 @@ create index if not exists friend_nudges_to_created
 
 alter table public.friend_nudges enable row level security;
 
+-- 送信から24時間を過ぎたものは誰からも見えない
 drop policy if exists friend_nudges_select_own on public.friend_nudges;
 create policy friend_nudges_select_own on public.friend_nudges
-  for select using (from_user_id = auth.uid() or to_user_id = auth.uid());
+  for select using (
+    created_at > now() - interval '24 hours'
+    and (from_user_id = auth.uid() or to_user_id = auth.uid())
+  );
 
 drop function if exists public.send_friend_nudge(uuid, text);
 create function public.send_friend_nudge(p_to_user_id uuid, p_emoji text)
@@ -393,6 +397,7 @@ as $$
   from public.friend_nudges n
   join public.users u on u.id = n.from_user_id
   where n.to_user_id = auth.uid()
+    and n.created_at > now() - interval '24 hours'
   order by n.created_at desc
   limit greatest(1, coalesce(p_limit, 20));
 $$;
@@ -407,6 +412,40 @@ grant execute on function public.get_my_received_nudges(int)    to authenticated
 do $$ begin
   alter publication supabase_realtime add table public.friend_nudges;
 exception when duplicate_object then null; end $$;
+
+-- ---------------------------------------------------------------------
+-- 24時間を過ぎたリアクションの物理削除（1時間おき、pg_cron）
+-- ---------------------------------------------------------------------
+create or replace function public.purge_expired_friend_nudges()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.friend_nudges where created_at <= now() - interval '24 hours';
+$$;
+
+revoke all on function public.purge_expired_friend_nudges() from public, anon, authenticated;
+
+do $$ begin
+  create extension if not exists pg_cron;
+exception when insufficient_privilege then
+  raise notice 'pg_cron を自動作成できませんでした。Supabaseダッシュボード > Database > Extensions で pg_cron を有効化してから、このファイルをもう一度実行してください。';
+end $$;
+
+do $$ begin
+  perform cron.unschedule('purge_expired_friend_nudges_hourly');
+exception when others then null; end $$;
+
+do $$ begin
+  perform cron.schedule(
+    'purge_expired_friend_nudges_hourly',
+    '0 * * * *',
+    $cron$select public.purge_expired_friend_nudges();$cron$
+  );
+exception when others then
+  raise notice 'pg_cronのスケジュール登録に失敗しました（拡張が未有効化の可能性）。見え方には影響しません。';
+end $$;
 
 
 -- #####################################################################
@@ -453,9 +492,10 @@ create table if not exists public.friend_comments (
   from_user_id uuid not null references public.users(id) on delete cascade,
   to_user_id   uuid not null references public.users(id) on delete cascade,
   body         text not null check (char_length(trim(body)) between 1 and 200),
-  created_at   timestamptz not null default now(),
-  constraint friend_comments_no_self check (from_user_id <> to_user_id)
+  created_at   timestamptz not null default now()
 );
+-- 自分のカードにも自分でコメントできるようにする（既存環境向けの差分適用）
+alter table public.friend_comments drop constraint if exists friend_comments_no_self;
 create index if not exists friend_comments_to_created
   on public.friend_comments (to_user_id, created_at desc);
 
@@ -471,7 +511,7 @@ create policy friend_comments_select on public.friend_comments
     and public.can_view_friend_comment(from_user_id, to_user_id)
   );
 create policy friend_comments_delete_own on public.friend_comments
-  for delete using (from_user_id = auth.uid() or to_user_id = auth.uid());
+  for delete using (from_user_id = auth.uid());
 
 do $$ begin
   alter publication supabase_realtime add table public.friend_comments;
@@ -489,7 +529,6 @@ declare
   v_row public.friend_comments;
 begin
   if v_me is null then raise exception 'AUTH_REQUIRED'; end if;
-  if p_to_user_id = v_me then raise exception 'CANNOT_COMMENT_SELF'; end if;
   if p_body is null or char_length(trim(p_body)) = 0 then raise exception 'BODY_REQUIRED'; end if;
   if char_length(trim(p_body)) > 200 then raise exception 'BODY_TOO_LONG'; end if;
   if not public.can_view_user_posts(p_to_user_id) then raise exception 'NOT_FRIENDS'; end if;
@@ -513,7 +552,7 @@ declare
 begin
   if v_me is null then raise exception 'AUTH_REQUIRED'; end if;
   delete from public.friend_comments
-  where id = p_comment_id and (from_user_id = v_me or to_user_id = v_me);
+  where id = p_comment_id and from_user_id = v_me;
   if not found then raise exception 'COMMENT_NOT_FOUND'; end if;
 end;
 $$;

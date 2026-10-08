@@ -10,6 +10,10 @@
 --  「Bのフレンドというだけ（Aのフレンドではない人）」には見せない。
 --  = 投稿者Aを基準にせず、A・B両方との関係で可視性を決める。
 --
+--  自分のカードにも自分でコメントできる（from_user_id = to_user_id を許可）。
+--  この場合 A=B=本人 なので、上の可視性ルールはそのまま「本人 or acceptedな
+--  フレンド」に自然に一致する。
+--
 --  有効期限: 投稿から24時間を過ぎたコメントは誰からも見えなくなる
 --  （RLS・RPCの両方で created_at > now() - 24h を条件に含める）。
 --  実データも pg_cron で1時間おきに物理削除する（cronが使えない環境でも、
@@ -67,9 +71,10 @@ create table if not exists public.friend_comments (
   from_user_id uuid not null references public.users(id) on delete cascade,
   to_user_id   uuid not null references public.users(id) on delete cascade,
   body         text not null check (char_length(trim(body)) between 1 and 200),
-  created_at   timestamptz not null default now(),
-  constraint friend_comments_no_self check (from_user_id <> to_user_id)
+  created_at   timestamptz not null default now()
 );
+-- 自分のカードにも自分でコメントできるようにする（既存環境向けの差分適用）
+alter table public.friend_comments drop constraint if exists friend_comments_no_self;
 create index if not exists friend_comments_to_created
   on public.friend_comments (to_user_id, created_at desc);
 
@@ -90,9 +95,10 @@ create policy friend_comments_select on public.friend_comments
 -- 投稿はRPC（security definer）経由のみ。直接insertはさせない運用にする
 -- （自分宛てには書けない／可視範囲の相手にしか書けない、をDB側でも保証するため）
 
+-- 削除できるのは投稿者本人のみ（カードの宛先本人でも他人のコメントは消せない）
 drop policy if exists friend_comments_delete_own on public.friend_comments;
 create policy friend_comments_delete_own on public.friend_comments
-  for delete using (from_user_id = auth.uid() or to_user_id = auth.uid());
+  for delete using (from_user_id = auth.uid());
 
 do $$ begin
   alter publication supabase_realtime add table public.friend_comments;
@@ -114,7 +120,6 @@ declare
   v_row public.friend_comments;
 begin
   if v_me is null then raise exception 'AUTH_REQUIRED'; end if;
-  if p_to_user_id = v_me then raise exception 'CANNOT_COMMENT_SELF'; end if;
   if p_body is null or char_length(trim(p_body)) = 0 then raise exception 'BODY_REQUIRED'; end if;
   if char_length(trim(p_body)) > 200 then raise exception 'BODY_TOO_LONG'; end if;
   if not public.can_view_user_posts(p_to_user_id) then raise exception 'NOT_FRIENDS'; end if;
@@ -138,7 +143,7 @@ declare
 begin
   if v_me is null then raise exception 'AUTH_REQUIRED'; end if;
   delete from public.friend_comments
-  where id = p_comment_id and (from_user_id = v_me or to_user_id = v_me);
+  where id = p_comment_id and from_user_id = v_me;
   if not found then raise exception 'COMMENT_NOT_FOUND'; end if;
 end;
 $$;
