@@ -149,7 +149,7 @@ export default function HomeScreen() {
               accessibilityLabel="筋トレ時間のグラフを見る">
               <View style={styles.statTopRow}>
                 <Text style={styles.statTop}>{MonoGlyph.star} 今週の合計</Text>
-                <Feather name="bar-chart-2" size={14} color={MonoColors.textMuted} />
+                <Feather name="chevron-right" size={16} color={MonoColors.textMuted} />
               </View>
               <Text style={styles.statValue}>
                 {stats.weekMinutes}
