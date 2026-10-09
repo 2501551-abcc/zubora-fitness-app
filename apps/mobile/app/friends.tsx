@@ -72,6 +72,8 @@ const GLOW_PINK = '#E4A7B7';
 const GLOW_GOLD = '#D8B45C';
 /** この日数ごとに星をひとつ灯す */
 const STAR_PER_DAYS = 7;
+/** 週間バーの目標（分）。これに達すると100% */
+const WEEKLY_GOAL_MINUTES = 150;
 /** フレンドへ送れるリアクションの絵文字（1日1回まで）。連続中は称賛系、お休み中は応援系 */
 const REACTION_EMOJIS_CHEER = ['🔥', '👏', '✨', '💪'];
 const REACTION_EMOJIS_SUPPORT = ['😭', '📣', '💪', '👋'];
@@ -417,23 +419,32 @@ function FriendCard({
   const isOnline = !!online;
   const lastActive = online?.last_active_at ?? friend.last_active_at;
   const stars = Math.min(5, Math.floor(friend.streak_days / STAR_PER_DAYS));
-  const goal = Math.max(friend.best_streak_days, STAR_PER_DAYS);
-  const progress = Math.min(1, friend.streak_days / goal);
+  // バーは「今週の筋トレ時間」を150分を100%として表示する
+  const progress = Math.min(1, friend.week_minutes / WEEKLY_GOAL_MINUTES);
   const status = friendStatus(friend, friend.is_self);
   const canNudge = !friend.is_self;
   const nudgeEmojis = status.vibe === 'streak' ? REACTION_EMOJIS_CHEER : REACTION_EMOJIS_SUPPORT;
 
   return (
     <Pressable
-      style={[styles.friendCard, rank === 1 && styles.friendCardTop]}
+      style={[
+        styles.friendCard,
+        rank === 1 && styles.friendCardTop,
+        friend.is_self && styles.friendCardSelf,
+      ]}
       onLongPress={friend.is_self ? undefined : onRemove}
       delayLongPress={350}>
       {/* ランク */}
-      <View style={[styles.rankBadge, rank === 1 && styles.rankBadgeTop]}>
+      <View
+        style={[
+          styles.rankBadge,
+          rank === 1 && styles.rankBadgeTop,
+          friend.is_self && styles.rankBadgeSelf,
+        ]}>
         {rank === 1 ? (
           <Text style={styles.rankStar}>{MonoGlyph.star}</Text>
         ) : (
-          <Text style={styles.rankNum}>{rank}</Text>
+          <Text style={[styles.rankNum, friend.is_self && styles.rankNumSelf]}>{rank}</Text>
         )}
       </View>
 
@@ -477,7 +488,10 @@ function FriendCard({
           </Text>
         )}
 
-        <StreakBar progress={progress} highlight={rank === 1} />
+        <StreakBar
+          progress={progress}
+          variant={friend.is_self ? 'self' : rank === 1 ? 'top' : undefined}
+        />
         <Text
           style={[styles.barCaption, status.vibe === 'nudge' && styles.nudgeCaption]}>
           {status.caption}
@@ -694,10 +708,11 @@ function Avatar({
 
 function StreakBar({
   progress,
-  highlight,
+  variant,
 }: {
   progress: number;
-  highlight?: boolean;
+  /** 'top' = 1位（ゴールド） / 'self' = 自分の枠（ローズ） */
+  variant?: 'top' | 'self';
 }) {
   const w = useSharedValue(0);
 
@@ -711,7 +726,12 @@ function StreakBar({
   return (
     <View style={styles.barTrack}>
       <Animated.View
-        style={[styles.barFill, highlight && styles.barFillTop, fillStyle]}
+        style={[
+          styles.barFill,
+          variant === 'top' && styles.barFillTop,
+          variant === 'self' && styles.barFillSelf,
+          fillStyle,
+        ]}
       />
       <Animated.View style={restStyle} />
     </View>
@@ -1217,6 +1237,11 @@ const styles = StyleSheet.create({
   friendCardTop: {
     borderColor: MonoColors.ink,
   },
+  /* 自分の枠だけ目立たせる（他画面でも使っているローズ系アクセント） */
+  friendCardSelf: {
+    backgroundColor: '#FAF0EF',
+    borderColor: MonoColors.accent,
+  },
   rankBadge: {
     position: 'absolute',
     top: -8,
@@ -1235,7 +1260,11 @@ const styles = StyleSheet.create({
     backgroundColor: MonoColors.ink,
     borderColor: MonoColors.ink,
   },
+  rankBadgeSelf: {
+    borderColor: MonoColors.accent,
+  },
   rankNum: { fontSize: 11, fontWeight: '700', color: MonoColors.textSecondary },
+  rankNumSelf: { color: MonoColors.accent },
   rankStar: { fontSize: 11, color: MonoColors.onInk },
 
   friendBody: { flex: 1, gap: 4 },
@@ -1274,10 +1303,8 @@ const styles = StyleSheet.create({
   },
   lastActive: { fontSize: 11, color: MonoColors.textMuted },
   selfBadge: {
-    backgroundColor: MonoColors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: MonoColors.border,
-    paddingHorizontal: 8,
+    backgroundColor: MonoColors.surface,
+    paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: MonoLayout.radiusPill,
     flex: 0,
@@ -1285,7 +1312,7 @@ const styles = StyleSheet.create({
   selfBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: MonoColors.inkSoft,
+    color: MonoColors.accent,
     letterSpacing: 0.5,
   },
 
@@ -1318,6 +1345,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   barFillTop: { backgroundColor: GLOW_GOLD },
+  barFillSelf: { backgroundColor: MonoColors.accent },
   barCaption: { fontSize: 10, color: MonoColors.textMuted, marginTop: 4 },
   nudgeCaption: { color: MonoColors.accent, fontWeight: '700' },
 
