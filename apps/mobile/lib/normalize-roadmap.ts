@@ -84,7 +84,9 @@ export function normalizeRoadmap(raw: unknown, input: RoadmapInput): Roadmap {
   return {
     goal_id: str(r.goal_id) || `gen-${Math.random().toString(36).slice(2, 10)}`,
     title: str(r.title, 'あなたの目標プラン'),
-    user_input_raw: str(r.user_input_raw) || input.goal_text,
+    // AIがプロンプト全体（前提10問つき）をそのまま返してくることがあるため、
+    // 信用せず手元の入力値をそのまま使う（画面で前提回答と二重表示になるのを防ぐ）
+    user_input_raw: input.goal_text,
     target_period_weeks: targetWeeks,
     milestones,
   };

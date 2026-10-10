@@ -10,7 +10,6 @@ export const ROADMAP_RESPONSE_SCHEMA = {
   properties: {
     goal_id: { type: 'STRING', description: '"gen-" + 短いランダム文字列' },
     title: { type: 'STRING', description: 'AI が整形した20字前後の前向きなプラン名' },
-    user_input_raw: { type: 'STRING', description: 'ユーザーの大目標入力をそのまま' },
     target_period_weeks: { type: 'INTEGER', description: 'プラン全体の週数。入力が未定なら8〜16で決める' },
     milestones: {
       type: 'ARRAY',
@@ -67,6 +66,6 @@ export const ROADMAP_RESPONSE_SCHEMA = {
       },
     },
   },
-  required: ['goal_id', 'title', 'user_input_raw', 'target_period_weeks', 'milestones'],
-  propertyOrdering: ['goal_id', 'title', 'user_input_raw', 'target_period_weeks', 'milestones'],
+  required: ['goal_id', 'title', 'target_period_weeks', 'milestones'],
+  propertyOrdering: ['goal_id', 'title', 'target_period_weeks', 'milestones'],
 } as const;
